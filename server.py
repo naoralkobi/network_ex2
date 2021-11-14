@@ -2,6 +2,10 @@ import socket
 import sys
 import string
 import random
+import time
+import watchdog
+import os
+
 
 class CONST:
     @staticmethod
@@ -31,14 +35,14 @@ def server(port):
 
         # in case the first bit(flag) is off, give new client an id
         if int(data[0:1]) == 0:
-            id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits,k = 128))
+            id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
             clients[id] = None
             print("random i: " + str(id))
             client_socket.send(id.encode("utf-8"))
 
         # in case of an already existing client
         # else:
-            # TODO - update the client folder
+        # TODO - update the client folder
         client_socket.close()
         print('Client disconnected')
 

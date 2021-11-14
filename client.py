@@ -1,6 +1,7 @@
 import socket
 import sys
 
+
 class CONST:
     @staticmethod
     def ARG_ONE():
@@ -19,6 +20,10 @@ class CONST:
         return 4
 
     @staticmethod
+    def ARG_FIVE():
+        return 5
+
+    @staticmethod
     def STARTING_PORT():
         return 0
 
@@ -27,7 +32,7 @@ class CONST:
         return 65535
 
 
-def connect(server_ip, server_port, folder_patch, refresh_rate):
+def sign_to_server(server_ip, server_port, folder_patch, refresh_rate):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((server_ip, int(server_port)))
 
@@ -38,6 +43,11 @@ def connect(server_ip, server_port, folder_patch, refresh_rate):
     print("Server sent id: ", id)
 
     s.close()
+
+
+def connect(server_ip, server_port, folder_patch, refresh_rate, id_number):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server_ip, int(server_port)))
 
 
 # check if the received ip address is in correct format.
@@ -57,7 +67,6 @@ def check_ip(ip_address):
 # runs the client program
 if __name__ == '__main__':
     try:
-
         server_ip = sys.argv[CONST.ARG_ONE()]
         server_port = sys.argv[CONST.ARG_TWO()]
         folder_patch = sys.argv[CONST.ARG_THREE()]
@@ -70,9 +79,11 @@ if __name__ == '__main__':
 
         # run client
         if len(sys.argv) == 5:
-            connect(server_ip, server_port, folder_patch, refresh_rate)
-        # if len(sys.argv) == 6:
-            # TODO - update folder using server
+            sign_to_server(server_ip, server_port, folder_patch, refresh_rate)
+
+        if len(sys.argv) == 6:
+            client_id = sys.argv[CONST.ARG_FIVE()]
+            connect(server_ip, server_port, folder_patch, refresh_rate, client_id)
 
     except ValueError:
         print("Error - Wrong Arguments!")

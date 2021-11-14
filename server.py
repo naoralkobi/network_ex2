@@ -2,6 +2,47 @@ import socket
 import sys
 import string
 import random
+import time
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
+
+class Watcher:
+    def __init__(self, folder_path):
+        self.observer = Observer()
+        self.folder = folder_path
+
+    def run(self):
+        event_handler = Handler()
+        self.observer.schedule(event_handler, self.folder, recursive=True)
+        self.observer.start()
+        try:
+            while True:
+                time.sleep(5)
+        except:
+            self.observer.stop()
+            print("Observer Stopped")
+
+        self.observer.join()
+
+
+class Handler(FileSystemEventHandler):
+    patterns = ["*.fits"]
+
+    def on_created(self, event):
+        print("Watchdog received created event - % s." % event.src_path)
+        # Event is created, you can process it now
+
+    def on_modified(self, event):
+        print("Watchdog received modified event - % s." % event.src_path)
+        # Event is modified, you can process it now
+
+    def on_moved(self, event):
+        pass
+
+    def on_deleted(self, event):
+        pass
+
 
 class CONST:
     @staticmethod
@@ -18,7 +59,6 @@ class CONST:
 
 
 def server(port):
-    clients = {}
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(('', int(port)))
     server.listen(5)
@@ -32,7 +72,6 @@ def server(port):
         # in case the first bit(flag) is off, give new client an id
         if int(data[0:1]) == 0:
             id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits,k = 128))
-            clients[id] = None
             print("random i: " + str(id))
             client_socket.send(id.encode("utf-8"))
 

@@ -1,5 +1,10 @@
 import socket
 import sys
+import string
+import random
+import time
+import watchdog
+import os
 
 
 class CONST:
@@ -32,16 +37,44 @@ class CONST:
         return 65535
 
 
-def sign_to_server(server_ip, server_port, folder_patch, refresh_rate):
+def list_file(folder_path):
+    # we shall store all the file names in this list
+    file_list = []
+
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            # append the file name to the list
+            file_list.append(os.path.join(root, file))
+    return file_list
+
+
+def sign_to_server(server_ip, server_port, folder_path, refresh_rate):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((server_ip, int(server_port)))
 
     # sent a 0 flag to get new id
     s.send(b'0')
+    client_id = s.recv(128)
+    print("Server sent id: ", client_id)
 
-    id = s.recv(128)
-    print("Server sent id: ", id)
+    # send all folder to the server.
+    file_list = list_file(folder_path)
 
+    # for each file in the folder send the data.
+    for path in file_list:
+
+        # send path of current file
+        s.send(bytes(path, 'utf-8'))
+
+        with open(path, "rb") as file:
+            chunk = file.read(1024)
+            while chunk != b'':
+
+                # send data
+                s.send(chunk)
+
+                # read the next data.
+                chunk = file.read(1024)
     s.close()
 
 

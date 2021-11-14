@@ -3,6 +3,7 @@ import sys
 import string
 import random
 import time
+import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -59,25 +60,46 @@ class CONST:
 
 
 def server(port):
+    path = "/home/naor/PycharmProjects/network_ex2"
+    clients = {}
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(('', int(port)))
     server.listen(5)
+    flag = True
     while True:
         client_socket, client_address = server.accept()
         print('Connection from: ', client_address)
-
-        data = client_socket.recv(100)
-        print('Received: ', data)
-
+        # get id 0
+        data = client_socket.recv(1024)
         # in case the first bit(flag) is off, give new client an id
         if int(data[0:1]) == 0:
-            id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits,k = 128))
+            id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
+            clients[id] = None
+
             print("random i: " + str(id))
             client_socket.send(id.encode("utf-8"))
 
+            folder_path = client_socket.recv(1024)
+            print(str(folder_path))
+            path = os.path.join(path, str(id))
+            os.mkdir(path)
+
+            file_path = client_socket.recv(1024)
+            name, extension = os.path.splitext(file_path)
+            print("the file name: ")
+            print(name)
+            print("the file extension: ")
+            print(extension)
+            file_name = os.path.basename(name)
+            f = open(file_name + extension, "w")
+
+
+            data = client_socket.recv(1024)
+            print(data.decode('utf-8'), end='')
+
         # in case of an already existing client
         # else:
-            # TODO - update the client folder
+        # TODO - update the client folder
         client_socket.close()
         print('Client disconnected')
 

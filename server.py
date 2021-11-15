@@ -59,11 +59,17 @@ class CONST:
         return 65535
 
 
+def file_path(relative_path):
+    dir = os.path.dirname(os.path.abspath(__file__))
+    split_path = relative_path.split("/")
+    new_path = os.path.join(dir, *split_path)
+    return new_path
+
+
 def server(port):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(('', int(port)))
     server.listen(5)
-    flag = True
     while True:
         client_socket, client_address = server.accept()
         print('Connection from: ', client_address)
@@ -73,25 +79,27 @@ def server(port):
         if int(data[0:1]) == 0:
             id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
 
-            print("random id: " + str(id))
+            # print("random id: " + str(id))
             client_socket.send(id.encode("utf-8"))
 
-            folder_path = client_socket.recv(1024)
-            print(str(folder_path))
-            path = os.path.join(path, str(id))
+            # create folder with the name : id
             os.mkdir(id)
 
-            file_path = client_socket.recv(1024)
-            name, extension = os.path.splitext(file_path)
-            print("the file name: ")
-            print(name)
-            print("the file extension: ")
-            print(extension)
-            file_name = os.path.basename(name)
-            f = open(file_name + extension, "w")
+            # TODO need to open file in id to write the data.
+            file_name = client_socket.recv(1024)
+            client_socket.send(b"got it")
+            file_name = str(file_name)
+            print(file_name)
 
+            file_to_write = open("/home/naor/PycharmProjects/network_ex2/" + id + "/" + file_name, "wb")
 
             data = client_socket.recv(1024)
+            while data != b'finish':
+                file_to_write.write(data)
+                data = client_socket.recv(1024)
+            if data == b'finish':
+                client_socket.send(b"got it")
+                file_to_write.close()
             print(data.decode('utf-8'), end='')
 
         # in case of an already existing client

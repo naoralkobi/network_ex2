@@ -60,8 +60,6 @@ class CONST:
 
 
 def server(port):
-    path = "/home/naor/PycharmProjects/network_ex2"
-    clients = {}
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(('', int(port)))
     server.listen(5)
@@ -74,15 +72,14 @@ def server(port):
         # in case the first bit(flag) is off, give new client an id
         if int(data[0:1]) == 0:
             id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
-            clients[id] = None
 
-            print("random i: " + str(id))
+            print("random id: " + str(id))
             client_socket.send(id.encode("utf-8"))
 
             folder_path = client_socket.recv(1024)
             print(str(folder_path))
             path = os.path.join(path, str(id))
-            os.mkdir(path)
+            os.mkdir(id)
 
             file_path = client_socket.recv(1024)
             name, extension = os.path.splitext(file_path)

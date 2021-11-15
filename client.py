@@ -37,17 +37,6 @@ class CONST:
         return 65535
 
 
-def list_file(folder_path):
-    # we shall store all the file names in this list
-    file_list = []
-
-    for root, dirs, files in os.walk(folder_path):
-        for file in files:
-            # append the file name to the list
-            file_list.append(os.path.join(root, file))
-    return file_list
-
-
 def sign_to_server(server_ip, server_port, folder_path, refresh_rate):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((server_ip, int(server_port)))
@@ -57,24 +46,30 @@ def sign_to_server(server_ip, server_port, folder_path, refresh_rate):
     client_id = s.recv(128)
     print("Server sent id: ", client_id)
 
-    # send all folder to the server.
-    file_list = list_file(folder_path)
+    file_list = os.listdir(folder_path)
+    for file in file_list:
 
-    # for each file in the folder send the data.
-    for path in file_list:
+        # send the name of the file.
+        s.send(bytes(file, 'utf-8'))
 
-        # send path of current file
-        s.send(bytes(path, 'utf-8'))
+        answer = s.recv(128)
+        print(file)
 
-        with open(path, "rb") as file:
-            chunk = file.read(1024)
-            while chunk != b'':
+        # TODO need to send to server the name and extension.
 
-                # send data
-                s.send(chunk)
+        # open each file and send to server.
+        # with open(folder_path + "/" + file, "rb") as f:
+        file_to_send = open(folder_path + "/" + file, "rb")
+        chunk = file_to_send.read(1024)
+        while chunk:
+            # send data
+            s.send(chunk)
 
-                # read the next data.
-                chunk = file.read(1024)
+            # read the next data.
+            chunk = file_to_send.read(1024)
+        s.send(b'finish')
+        answer = s.recv(128)
+        file_to_send.close()
     s.close()
 
 

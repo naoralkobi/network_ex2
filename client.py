@@ -3,7 +3,6 @@ import sys
 import string
 import random
 import time
-import watchdog
 import os
 
 
@@ -38,39 +37,39 @@ class CONST:
 
 
 def sign_to_server(server_ip, server_port, folder_path, refresh_rate):
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((server_ip, int(server_port)))
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.connect((server_ip, int(server_port)))
+    with server_socket:
+        # sent a 0 flag to get new id
+        server_socket.send(b'0')
+        client_id = server_socket.recv(128)
+        print("Server sent id: ", client_id)
 
-    # sent a 0 flag to get new id
-    s.send(b'0')
-    client_id = s.recv(128)
-    print("Server sent id: ", client_id)
+        # sent every file to the server
+        for path, dirs, files in os.walk(folder_path):
+            for file in files:
+                filename = os.path.join(path, file)
+                relpath = os.path.relpath(filename, folder_path)
+                filesize = os.path.getsize(filename)
 
-    file_list = os.listdir(folder_path)
-    for file in file_list:
+                print(f'Sending {relpath}')
 
-        # send the name of the file.
-        s.send(bytes(file, 'utf-8'))
+                # open file to be read in binary according to absolute path
+                with open(filename, 'rb') as f:
 
-        answer = s.recv(128)
-        print(file)
+                    # send relative path to the file
+                    server_socket.send(relpath.encode() + b'\n')
 
-        # TODO need to send to server the name and extension.
+                    # send file size
+                    server_socket.send(str(filesize).encode() + b'\n')
 
-        # open each file and send to server.
-        # with open(folder_path + "/" + file, "rb") as f:
-        file_to_send = open(folder_path + "/" + file, "rb")
-        chunk = file_to_send.read(1024)
-        while chunk:
-            # send data
-            s.send(chunk)
+                    data = f.read(1024)
 
-            # read the next data.
-            chunk = file_to_send.read(1024)
-        s.send(b'finish')
-        answer = s.recv(128)
-        file_to_send.close()
-    s.close()
+                    # send file's data to the server
+                    while not data:
+                        server_socket.send(data)
+                        data = f.read(1024)
+            print('Done.')
 
 
 def connect(server_ip, server_port, folder_patch, refresh_rate, id_number):

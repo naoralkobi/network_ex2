@@ -91,7 +91,10 @@ def server(port):
             file_name = str(file_name)
             print(file_name)
 
-            file_to_write = open("/home/naor/PycharmProjects/network_ex2/" + id + "/" + file_name, "wb")
+            # get root dir.
+            root_dir = os.path.abspath(os.curdir)
+
+            file_to_write = open(root_dir + "/" + id + "/" + file_name, "wb")
 
             data = client_socket.recv(1024)
             while data != b'finish':
@@ -112,7 +115,6 @@ def server(port):
 if __name__ == '__main__':
     try:
         port_number = sys.argv[CONST.ARG_ONE()]
-
         # in case the port or ip address arent valid, exit
         if int(port_number) < CONST.STARTING_PORT() or int(port_number) > CONST.ENDING_PORT():
             raise ValueError

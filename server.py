@@ -59,11 +59,52 @@ class CONST:
         return 65535
 
 
-def file_path(relative_path):
-    dir = os.path.dirname(os.path.abspath(__file__))
-    split_path = relative_path.split("/")
-    new_path = os.path.join(dir, *split_path)
-    return new_path
+def new_client(client_socket):
+    # create new random id for client
+    id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
+
+    # send id to client
+    client_socket.send(id.encode("utf-8"))
+
+    # create folder with the name : id
+    os.mkdir(id)
+    with client_socket, client_socket.makefile('rb') as clientfile:
+        while True:
+
+            # read line from client
+            current_line = clientfile.readline()
+
+            # if there are no more files, exit.
+            if not current_line:
+                break
+
+            filename = current_line.strip().decode()
+            length = int(clientfile.readline())
+
+            print(f'Downloading {filename}...\n  Expecting {length:,} bytes...', end='', flush=True)
+
+            # new file path
+            path = os.path.join(id, filename)
+
+            # in case file's folder doesn't exist, create it
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
+            # read current file's data
+            with open(path, 'wb') as f:
+                while length:
+                    current_chunk_size = min(length, 1024)
+                    data = clientfile.read(current_chunk_size)
+                    if not data:
+                        break
+                    f.write(data)
+                    length -= len(data)
+                else:  # only runs if while doesn't break and length==0
+                    print('Complete')
+                    continue
+
+            # socket was closed early.
+            print('Incomplete')
+            break
 
 
 def server(port):
@@ -73,42 +114,16 @@ def server(port):
     while True:
         client_socket, client_address = server.accept()
         print('Connection from: ', client_address)
-        # get id 0
-        data = client_socket.recv(1024)
-        # in case the first bit(flag) is off, give new client an id
-        if int(data[0:1]) == 0:
-            id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
-
-            # print("random id: " + str(id))
-            client_socket.send(id.encode("utf-8"))
-
-            # create folder with the name : id
-            os.mkdir(id)
-
-            # TODO need to open file in id to write the data.
-            file_name = client_socket.recv(1024)
-            client_socket.send(b"got it")
-            file_name = str(file_name)
-            print(file_name)
-
-            # get root dir.
-            root_dir = os.path.abspath(os.curdir)
-
-            file_to_write = open(root_dir + "/" + id + "/" + file_name, "wb")
-
+        with client_socket:
+            # get id 0
             data = client_socket.recv(1024)
-            while data != b'finish':
-                file_to_write.write(data)
-                data = client_socket.recv(1024)
-            if data == b'finish':
-                client_socket.send(b"got it")
-                file_to_write.close()
-            print(data.decode('utf-8'), end='')
+            # in case the first bit(flag) is off, give new client an id
+            if int(data[0:1]) == 0:
+                new_client(client_socket)
 
-        # in case of an already existing client
-        # else:
-        # TODO - update the client folder
-        client_socket.close()
+            # in case of an already existing client
+            # else:
+            # TODO - update the client folder
         print('Client disconnected')
 
 

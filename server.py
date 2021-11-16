@@ -8,43 +8,6 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 
-class Watcher:
-    def __init__(self, folder_path):
-        self.observer = Observer()
-        self.folder = folder_path
-
-    def run(self):
-        event_handler = Handler()
-        self.observer.schedule(event_handler, self.folder, recursive=True)
-        self.observer.start()
-        try:
-            while True:
-                time.sleep(5)
-        except:
-            self.observer.stop()
-            print("Observer Stopped")
-
-        self.observer.join()
-
-
-class Handler(FileSystemEventHandler):
-    patterns = ["*.fits"]
-
-    def on_created(self, event):
-        print("Watchdog received created event - % s." % event.src_path)
-        # Event is created, you can process it now
-
-    def on_modified(self, event):
-        print("Watchdog received modified event - % s." % event.src_path)
-        # Event is modified, you can process it now
-
-    def on_moved(self, event):
-        pass
-
-    def on_deleted(self, event):
-        pass
-
-
 class CONST:
     @staticmethod
     def ARG_ONE():
@@ -107,10 +70,14 @@ def new_client(client_socket):
             break
 
 
+def existing_client(client_socket):
+    client_id = client_socket.recv(128)
+
+
 def server(port):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(('', int(port)))
-    server.listen(5)
+    server.listen(1)
     while True:
         client_socket, client_address = server.accept()
         print('Connection from: ', client_address)
@@ -122,8 +89,8 @@ def server(port):
                 new_client(client_socket)
 
             # in case of an already existing client
-            # else:
-            # TODO - update the client folder
+            else:
+                existing_client(client_socket)
         print('Client disconnected')
 
 

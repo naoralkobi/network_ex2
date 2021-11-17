@@ -98,8 +98,8 @@ def sign_to_server(server_ip, server_port, folder_path, refresh_rate):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
     with server_socket:
-        # sent a 0 flag to get new id
-        server_socket.send(b'0')
+        # send an empty message to get id
+        server_socket.send(b' ')
         client_id = server_socket.recv(128)
         print("Server sent id: ", client_id)
 
@@ -116,18 +116,17 @@ def sign_to_server(server_ip, server_port, folder_path, refresh_rate):
                 with open(filename, 'rb') as f:
 
                     # send relative path to the file
-                    server_socket.send(relpath.encode() + b'\n')
+                    server_socket.sendall(relpath.encode() + b'\n')
 
                     # send file size
-                    server_socket.send(str(filesize).encode() + b'\n')
+                    server_socket.sendall(str(filesize).encode() + b'\n')
 
+                    # Send the file in chunks so large files can be handled.
                     data = f.read(1024)
-
-                    # send file's data to the server
-                    while not data:
-                        server_socket.send(data)
+                    while data:
+                        server_socket.sendall(data)
                         data = f.read(1024)
-            print('Done.')
+        print('Done.')
 
 
 def connect(server_ip, server_port, folder_patch, refresh_rate, id_number):
@@ -140,8 +139,6 @@ def connect(server_ip, server_port, folder_patch, refresh_rate, id_number):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.connect((server_ip, int(server_port)))
         with server_socket:
-            # send a 1 flag to re-connect as an existing client
-            server_socket.send(b'1')
 
             # send id to server
             server_socket.send(id_number.encode("utf-8"))

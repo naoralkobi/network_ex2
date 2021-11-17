@@ -35,8 +35,7 @@ class Watcher:
         except:
             self.observer.stop()
             print("Observer Stopped")
-
-        self.observer.join()
+            self.observer.join()
 
 
 class Handler(FileSystemEventHandler):
@@ -94,7 +93,7 @@ class CONST:
         return 65535
 
 
-def sign_to_server(server_ip, server_port, folder_path, refresh_rate):
+def sign_to_server(server_ip, server_port, folder_path):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
     with server_socket:
@@ -113,7 +112,7 @@ def sign_to_server(server_ip, server_port, folder_path, refresh_rate):
                 print(f'Sending {relpath}')
 
                 # open file to be read in binary according to absolute path
-                with open(filename, 'rb') as f:
+                with open(filename, 'rb') as current_file:
 
                     # send relative path to the file
                     server_socket.sendall(relpath.encode() + b'\n')
@@ -122,10 +121,10 @@ def sign_to_server(server_ip, server_port, folder_path, refresh_rate):
                     server_socket.sendall(str(filesize).encode() + b'\n')
 
                     # Send the file in chunks so large files can be handled.
-                    data = f.read(1024)
+                    data = current_file.read(1024)
                     while data:
                         server_socket.sendall(data)
-                        data = f.read(1024)
+                        data = current_file.read(1024)
         print('Done.')
 
 
@@ -134,6 +133,7 @@ def connect(server_ip, server_port, folder_patch, refresh_rate, id_number):
 
     # watch the folder and enter events to queue
     watchdog = Watcher(folder_patch, queue)
+    watchdog.run()
 
     while True:
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -143,7 +143,7 @@ def connect(server_ip, server_port, folder_patch, refresh_rate, id_number):
             # send id to server
             server_socket.send(id_number.encode("utf-8"))
 
-        # time.sleep(refresh_rate)
+        time.sleep(refresh_rate)
 
 
 # check if the received ip address is in correct format.

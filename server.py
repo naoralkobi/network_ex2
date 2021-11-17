@@ -53,13 +53,13 @@ def new_client(client_socket):
             os.makedirs(os.path.dirname(path), exist_ok=True)
 
             # read current file's data
-            with open(path, 'wb') as f:
+            with open(path, 'wb') as current_file:
                 while length:
                     current_chunk_size = min(length, 1024)
                     data = clientfile.read(current_chunk_size)
                     if not data:
                         break
-                    f.write(data)
+                    current_file.write(data)
                     length -= len(data)
                 else:  # only runs if while doesn't break and length==0
                     print('Complete')
@@ -71,7 +71,7 @@ def new_client(client_socket):
 
 
 def existing_client(client_socket, client_id):
-    pass
+    print("client id: " + client_id)
 
 
 def server(port):
@@ -82,9 +82,11 @@ def server(port):
         client_socket, client_address = server.accept()
         print('Connection from: ', client_address)
         with client_socket:
-            # get id 0
-            data = client_socket.recv(1024)
-            # in case the first bit(flag) is off, give new client an id
+
+            # get empty byte or id number from client
+            data = client_socket.recv(128)
+
+            # in case of empty byte, give new client an id
             if data == b' ':
                 new_client(client_socket)
 

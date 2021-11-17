@@ -70,8 +70,8 @@ def new_client(client_socket):
             break
 
 
-def existing_client(client_socket):
-    client_id = client_socket.recv(128)
+def existing_client(client_socket, client_id):
+    pass
 
 
 def server(port):
@@ -85,12 +85,12 @@ def server(port):
             # get id 0
             data = client_socket.recv(1024)
             # in case the first bit(flag) is off, give new client an id
-            if int(data[0:1]) == 0:
+            if data == b' ':
                 new_client(client_socket)
 
             # in case of an already existing client
             else:
-                existing_client(client_socket)
+                existing_client(client_socket, data.decode("utf-8"))
         print('Client disconnected')
 
 

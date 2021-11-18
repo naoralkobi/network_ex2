@@ -1,11 +1,12 @@
 import socket
 import sys
-import string
-import random
 import time
 import os
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import PatternMatchingEventHandler, FileSystemEventHandler
+
+
+last_update = 0
 
 
 class Event:
@@ -14,24 +15,42 @@ class Event:
         self.time = time
         self.action = action
 
+    def get_file(self):
+        return self.file
+
+    def get_time(self):
+        return self.time
+
+    def get_action(self):
+        return self.action
+
+    def set_file(self, f):
+        self.file = f
+
+    def set_time(self, t):
+        self.time = t
+
+    def set_action(self, a):
+        self.action = a
+
     def run(self):
         # TODO - run each action
         pass
 
 
 class Watcher:
-    def __init__(self, folder_path, queue):
+    def __init__(self, folder_path):
         self.observer = Observer()
         self.folder = folder_path
-        self.queue = queue
 
-    def run(self):
-        event_handler = Handler(self.queue)
+    def run(self, server_ip, server_port, refresh_rate, id_number, queue):
+        event_handler = Handler(queue)
         self.observer.schedule(event_handler, self.folder, recursive=True)
         self.observer.start()
         try:
             while True:
-                time.sleep(5)
+                connect(server_ip, server_port, folder_patch, refresh_rate, id_number)
+                time.sleep(refresh_rate)
         except:
             self.observer.stop()
             print("Observer Stopped")
@@ -55,7 +74,7 @@ class Handler(FileSystemEventHandler):
         # Event is modified, you can process it now
 
     def on_moved(self, event):
-        self.queue.append(Event(event.src_path, time.time(), "move"))
+        self.queue.append(Event(event.src_path, time.time(),"move"))
         print("Watchdog received moved event - % s." % event.src_path)
 
     def on_deleted(self, event):
@@ -99,7 +118,7 @@ def sign_to_server(server_ip, server_port, folder_path):
     with server_socket:
         # send an empty message to get id
         server_socket.send(b' ')
-        client_id = server_socket.recv(128)
+        client_id = server_socket.recv(128).decode('utf-8')
         print("Server sent id: ", client_id)
 
         # sent every file to the server
@@ -108,7 +127,6 @@ def sign_to_server(server_ip, server_port, folder_path):
                 filename = os.path.join(path, file)
                 relpath = os.path.relpath(filename, folder_path)
                 filesize = os.path.getsize(filename)
-
                 print(f'Sending {relpath}')
 
                 # open file to be read in binary according to absolute path
@@ -126,24 +144,24 @@ def sign_to_server(server_ip, server_port, folder_path):
                         server_socket.sendall(data)
                         data = current_file.read(1024)
         print('Done.')
+        return id
 
 
 def connect(server_ip, server_port, folder_patch, refresh_rate, id_number):
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.connect((server_ip, int(server_port)))
+    with server_socket:
+        # send id to server
+        server_socket.send(id_number.encode("utf-8"))
+        server_socket.send(str(last_update).encode("utf-8"))
+
+    time.sleep(refresh_rate)
+
+
+def monitor_and_connect(server_ip, server_port, folder_patch, refresh_rate, id_number):
     queue = []
-
-    # watch the folder and enter events to queue
-    watchdog = Watcher(folder_patch, queue)
-    watchdog.run()
-
-    while True:
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.connect((server_ip, int(server_port)))
-        with server_socket:
-
-            # send id to server
-            server_socket.send(id_number.encode("utf-8"))
-
-        time.sleep(refresh_rate)
+    observer = Watcher(folder_patch)
+    observer.run(server_ip, server_port, refresh_rate, id_number, queue)
 
 
 # check if the received ip address is in correct format.
@@ -166,7 +184,7 @@ if __name__ == '__main__':
         server_ip = sys.argv[CONST.ARG_ONE()]
         server_port = sys.argv[CONST.ARG_TWO()]
         folder_patch = sys.argv[CONST.ARG_THREE()]
-        refresh_rate = sys.argv[CONST.ARG_FOUR()]
+        refresh_rate = int(sys.argv[CONST.ARG_FOUR()])
 
         # in case the port or ip address arent valid, exit
         if int(server_port) < CONST.STARTING_PORT() or int(server_port) > CONST.ENDING_PORT() \
@@ -175,11 +193,12 @@ if __name__ == '__main__':
 
         # run client
         if len(sys.argv) == 5:
-            sign_to_server(server_ip, server_port, folder_patch, refresh_rate)
+            client_id = sign_to_server(server_ip, server_port, folder_patch)
+            monitor_and_connect(server_ip, server_port, folder_patch, refresh_rate, client_id)
 
         if len(sys.argv) == 6:
             client_id = sys.argv[CONST.ARG_FIVE()]
-            connect(server_ip, server_port, folder_patch, refresh_rate, client_id)
+            monitor_and_connect(server_ip, server_port, folder_patch, refresh_rate, client_id)
 
     except ValueError:
         print("Error - Wrong Arguments!")

@@ -4,9 +4,24 @@ import string
 import random
 import time
 import os
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 
+
+class Event:
+    def __init__(self, file, time, action):
+        self.file = file
+        self.time = time
+        self.action = action
+
+    def get_file(self):
+        return self.file
+
+    def get_time(self):
+        return self.time
+
+    def get_action(self):
+        return self.action
+
+clients_queues = {}
 
 class CONST:
     @staticmethod
@@ -31,6 +46,7 @@ def new_client(client_socket):
 
     # create folder with the name : id
     os.mkdir(id)
+    clients_queues[id] = []
     with client_socket, client_socket.makefile('rb') as clientfile:
         while True:
 
@@ -63,6 +79,9 @@ def new_client(client_socket):
                     length -= len(data)
                 else:  # only runs if while doesn't break and length==0
                     print('Complete')
+                    create_event = Event(filename, time.time(), "create")
+                    clients_queues[id].append(create_event)
+                    print(clients_queues)
                     continue
 
             # socket was closed early.
@@ -72,6 +91,12 @@ def new_client(client_socket):
 
 def existing_client(client_socket, client_id):
     print("client id: " + client_id)
+    client_last_update_time = float(client_socket.recv(1024).decode("utf-8"))
+    print(client_last_update_time)
+    for event in clients_queues[client_id]:
+        if isinstance(event) == Event:
+            print("good")
+        # if client_last_update_time > (Event)event.
 
 
 def server(port):

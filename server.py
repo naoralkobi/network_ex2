@@ -116,21 +116,11 @@ def new_client(client_socket):
 
 def check_for_new_events(client_socket, client_id):
     data = client_socket.recv(1024)
-    if data == b' ':
-        print("no new events from client")
-        return
-    if data.decode("utf-8") == "created":
-        with client_socket.makefile('rb') as client_file:
-            while True:
-
-                # read line from client
-                current_line = client_file.readline()
-
-                # if there are no more files, exit.
-                if not current_line:
-                    break
-
-                filename = current_line.strip().decode()
+    client_socket.send(b' ')
+    while data != b' ':
+        if data.decode("utf-8") == "create":
+            with client_socket.makefile('rb') as client_file:
+                filename = client_file.readline().strip().decode()
                 length = int(client_file.readline())
 
                 print(f'Downloading {filename}...\n  Expecting {length:,} bytes...', end='', flush=True)
@@ -154,22 +144,24 @@ def check_for_new_events(client_socket, client_id):
                         print('Complete')
                         create_event = Event(filename, time.time(), "create")
                         clients_queues[client_id].append(create_event)
-                        print(clients_queues)
-                        continue
+        print("before getting data")
+        data = client_socket.recv(15)
+        print("data: ")
+        print(data)
+        # send ack
+        client_socket.send(b' ')
 
-                # socket was closed early.
-                print('Incomplete')
-                break
+    print("no new events from client")
 
 
 def existing_client(client_socket, client_id):
     print("client id: " + client_id)
-    client_last_update_time = float(client_socket.recv(1024).decode("utf-8"))
-    print(client_last_update_time)
-    for event in clients_queues[client_id]:
-        # in case event in queue happened after last event in client, send it to client
-        if isinstance(event, Event) and client_last_update_time > event.get_time():
-            Event.send_event_to_client(event, client_socket, client_id)
+    # client_last_update_time = float(client_socket.recv(1024).decode("utf-8"))
+    # print(client_last_update_time)
+    # for event in clients_queues[client_id]:
+    #     # in case event in queue happened after last event in client, send it to client
+    #     if isinstance(event, Event) and client_last_update_time > event.get_time():
+    #         Event.send_event_to_client(event, client_socket, client_id)
     # get event from client
     check_for_new_events(client_socket, client_id)
 

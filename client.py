@@ -3,7 +3,7 @@ import sys
 import time
 import os
 from watchdog.observers import Observer
-from watchdog.events import PatternMatchingEventHandler, FileSystemEventHandler
+from watchdog.events import FileSystemEventHandler
 
 last_update = 0
 
@@ -23,19 +23,6 @@ class Event:
     def get_action(self):
         return self.action
 
-    def set_file(self, f):
-        self.file = f
-
-    def set_time(self, t):
-        self.time = t
-
-    def set_action(self, a):
-        self.action = a
-
-    def run(self):
-        # TODO - run each action
-        pass
-
 
 class Watcher:
     def __init__(self, folder_path):
@@ -49,6 +36,7 @@ class Watcher:
         try:
             while True:
                 connect(server_ip, server_port, folder_patch, refresh_rate, id_number, queue)
+                print("going to sleep")
                 time.sleep(refresh_rate)
         except:
             self.observer.stop()
@@ -68,7 +56,7 @@ class Handler(FileSystemEventHandler):
         # Event is created, you can process it now
 
     def on_modified(self, event):
-        self.queue.append(Event(event.src_path, time.time(), "modify"))
+        # self.queue.append(Event(event.src_path, time.time(), "modify"))
         print("Watchdog received modified event - % s." % event.src_path)
         # Event is modified, you can process it now
 
@@ -125,62 +113,40 @@ def sign_to_server(server_ip, server_port, folder_path):
             for file in files:
                 file_name = os.path.join(path, file)
                 relative_path = os.path.relpath(file_name, folder_path)
-                file_size = os.path.getsize(file_name)
                 print(f'Sending {relative_path}')
-
-                # open file to be read in binary according to absolute path
-                with open(file_name, 'rb') as current_file:
-
-                    # send relative path to the file
-                    server_socket.sendall(relative_path.encode() + b'\n')
-
-                    # send file size
-                    server_socket.sendall(str(file_size).encode() + b'\n')
-
-                    # Send the file in chunks so large files can be handled.
-                    data = current_file.read(1024)
-                    while data:
-                        server_socket.sendall(data)
-                        data = current_file.read(1024)
-                    global last_update
-                    last_update = time.time()
-        print('Done.')
+                send_and_create_file(server_socket, file_name, folder_path)
+                global last_update
+                last_update = time.time()
         return client_id
 
 
-def send_to_server(server_socket, event):
+def send_and_create_file(server_socket, file, folder_path):
+    with open(file, "rb") as current_file:
+        relative_path = os.path.relpath(file, folder_path)
+        file_size = os.path.getsize(file)
+        server_socket.sendall(relative_path.encode() + b'\n')
+
+        # send file size
+        server_socket.sendall(str(file_size).encode() + b'\n')
+
+        # Send the file in chunks so large files can be handled.
+        data = current_file.read(1024)
+        while data:
+            server_socket.sendall(data)
+            data = current_file.read(1024)
+    print('Done.')
+
+
+def send_event_to_server(server_socket, event, folder_path):
+    print("action: " + event.get_action())
     server_socket.send(event.get_action().encode("utf-8"))
-    with server_socket.makefile("rb") as server_file:
-        while True:
-            # read line from server
-            current_line = server_file.readline()
+    ack = server_socket.recv(1024)
+    if ack == b' ':
+        print("got ack")
 
-            # if there are no more files, exit.
-            if not current_line:
-                break
-
-            filename = current_line.strip().decode()
-            length = int(server_file.readline())
-
-            print(f'Downloading {filename}...\n  Expecting {length:,} bytes...', end='', flush=True)
-
-            # new file path
-            path = os.path.join(folder_patch, filename)
-
-            # in case file's folder doesn't exist, create it
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            # read current file's data
-            with open(path, 'wb') as current_file:
-                while length:
-                    current_chunk_size = min(length, 1024)
-                    data = server_file.read(current_chunk_size)
-                    if not data:
-                        break
-                    current_file.write(data)
-                    length -= len(data)
-                else:  # only runs if while doesn't break and length==0
-                    print('Complete')
-                    continue
+    if event.get_action() == 'create':
+        print("sending file: " + event.get_file())
+        send_and_create_file(server_socket, event.get_file(), folder_path)
 
 
 def get_events_from_server():
@@ -188,26 +154,30 @@ def get_events_from_server():
     # TODO
 
 
-def connect(server_ip, server_port, folder_patch, refresh_rate, id_number, queue):
+def connect(server_ip, server_port, folder_path, refresh_rate, id_number, queue):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
+    print("Connected to: " + server_ip)
     with server_socket:
-        global last_update
-        # send id to server
+        # global last_update
+        # # send id to server
         server_socket.send(id_number.encode("utf-8"))
-        print("timer sent: ")
-        print(last_update)
-        server_socket.send(str(last_update).encode("utf-8"))
-        get_events_from_server()
+        # print("timer sent: ")
+        # print(last_update)
+        # server_socket.send(str(last_update).encode("utf-8"))
+        # get_events_from_server()
 
-    # update server with client events
-    # if len(queue):
-    #     for event in queue:
-    #         send_to_server(server_socket, event)
-    #         queue.remove(event)
-    # # in case clients has no new event
-    # else:
-    #     server_socket.send(b' ')
+        # update server with client events
+        while len(queue):
+            for event in queue:
+                send_event_to_server(server_socket, event, folder_path)
+                queue.remove(event)
+        # in case clients has no new event
+        server_socket.send(b' ')
+        ack = server_socket.recv(1024)
+        if ack == b' ':
+            print("got finishing ack")
+    print("disconected")
 
 
 def monitor_and_connect(server_ip, server_port, folder_patch, refresh_rate, id_number):

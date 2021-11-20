@@ -102,10 +102,10 @@ class CONST:
 def sign_to_server(server_ip, server_port, folder_path):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
-    with server_socket:
+    with server_socket, server_socket.makefile('rb') as server_file:
         # send an empty message to get id
-        server_socket.send(b' ')
-        client_id = server_socket.recv(128).decode('utf-8')
+        server_socket.sendall(b'\n')
+        client_id = server_file.readline().decode().strip()
         print("Server sent id: ", client_id)
 
         # send every file to the server
@@ -139,10 +139,7 @@ def send_and_create_file(server_socket, file, folder_path):
 
 def send_event_to_server(server_socket, event, folder_path):
     print("action: " + event.get_action())
-    server_socket.send(event.get_action().encode("utf-8"))
-    ack = server_socket.recv(1024)
-    if ack == b' ':
-        print("got ack")
+    server_socket.sendall(event.get_action().encode() + b'\n')
 
     if event.get_action() == 'create':
         print("sending file: " + event.get_file())
@@ -161,7 +158,7 @@ def connect(server_ip, server_port, folder_path, refresh_rate, id_number, queue)
     with server_socket:
         # global last_update
         # # send id to server
-        server_socket.send(id_number.encode("utf-8"))
+        server_socket.sendall(id_number.encode("utf-8") + b'\n')
         # print("timer sent: ")
         # print(last_update)
         # server_socket.send(str(last_update).encode("utf-8"))
@@ -173,10 +170,7 @@ def connect(server_ip, server_port, folder_path, refresh_rate, id_number, queue)
                 send_event_to_server(server_socket, event, folder_path)
                 queue.remove(event)
         # in case clients has no new event
-        server_socket.send(b' ')
-        ack = server_socket.recv(1024)
-        if ack == b' ':
-            print("got finishing ack")
+        server_socket.sendall(b'\n')
     print("disconected")
 
 

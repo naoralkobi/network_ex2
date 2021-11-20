@@ -67,7 +67,7 @@ def new_client(client_socket):
     client_id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
 
     # send id to client
-    client_socket.send(client_id.encode("utf-8"))
+    client_socket.sendall(client_id.encode("utf-8") + b'\n')
 
     # create folder with the name : id
     os.mkdir(client_id)
@@ -115,11 +115,11 @@ def new_client(client_socket):
 
 
 def check_for_new_events(client_socket, client_id):
-    data = client_socket.recv(1024)
-    client_socket.send(b' ')
-    while data != b' ':
-        if data.decode("utf-8") == "create":
-            with client_socket.makefile('rb') as client_file:
+    with client_socket.makefile('rb') as client_file:
+        data = client_file.readline().strip().decode()
+        while data != '':
+            if data == "create":
+
                 filename = client_file.readline().strip().decode()
                 length = int(client_file.readline())
 
@@ -144,12 +144,10 @@ def check_for_new_events(client_socket, client_id):
                         print('Complete')
                         create_event = Event(filename, time.time(), "create")
                         clients_queues[client_id].append(create_event)
-        print("before getting data")
-        data = client_socket.recv(15)
-        print("data: ")
-        print(data)
-        # send ack
-        client_socket.send(b' ')
+            print("before getting data")
+            data = client_file.readline().strip().decode()
+            print("data: ")
+            print(data)
 
     print("no new events from client")
 
@@ -173,18 +171,18 @@ def server(port):
     while True:
         client_socket, client_address = server_socket.accept()
         print('Connection from: ', client_address)
-        with client_socket:
+        with client_socket, client_socket.makefile('rb') as client_file:
 
             # get empty byte or id number from client
-            data = client_socket.recv(128)
+            data = client_file.readline().strip().decode()
 
             # in case of empty byte, give new client an id
-            if data == b' ':
+            if data == '':
                 new_client(client_socket)
 
             # in case of an already existing client
             else:
-                existing_client(client_socket, data.decode("utf-8"))
+                existing_client(client_socket, data)
         print('Client disconnected')
 
 

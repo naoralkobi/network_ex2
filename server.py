@@ -26,7 +26,6 @@ class Event:
     @staticmethod
     def send_event_to_client(event, client_socket, client_id):
         if event.get_action() == "create":
-            print("create in send_event_to_client")
             with open(os.path.join(client_id, event.get_file()), 'rb') as current_file:
                 # send relative path to the file
                 client_socket.sendall(event.get_file().encode() + b'\n')
@@ -72,9 +71,7 @@ def new_client(client_socket):
 
     # create folder with the name : id
     os.mkdir(client_id)
-
     clients_queues[client_id] = []
-
     with client_socket, client_socket.makefile('rb') as client_file:
         while True:
 
@@ -122,6 +119,7 @@ def check_for_new_events(client_socket, client_id):
         data = client_file.readline().strip().decode()
         while data != '':
             if data == "create":
+
                 filename = client_file.readline().strip().decode()
                 length = int(client_file.readline())
 
@@ -159,12 +157,10 @@ def check_for_new_events(client_socket, client_id):
                 print(folder)
                 os.remove(folder)
                 # TODO add this to list.
-
-        print("before getting data")
-        data = client_file.readline().strip().decode()
-        print("data: ")
-        print(data)
-
+            print("before getting data")
+            data = client_file.readline().strip().decode()
+            print("data: ")
+            print(data)
     print("no new events from client")
 
 
@@ -175,7 +171,7 @@ def existing_client(client_socket, client_id):
     # for event in clients_queues[client_id]:
     #     # in case event in queue happened after last event in client, send it to client
     #     if isinstance(event, Event) and client_last_update_time > event.get_time():
-    #         Event.send event_to_client(event, client_socket, client_id)
+    #         Event.send_event_to_client(event, client_socket, client_id)
     # get event from client
     check_for_new_events(client_socket, client_id)
 
@@ -193,7 +189,7 @@ def server():
             data = client_file.readline().strip().decode()
 
             # in case of empty byte, give new client an id
-            if data == b' ':
+            if data == '':
                 new_client(client_socket)
 
             # in case of an already existing client

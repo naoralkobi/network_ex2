@@ -189,7 +189,7 @@ def connect(id_number, queue):
         while len(queue):
             for event in queue:
                 print("deal with event")
-                send_event_to_server(server_socket, event, folder_path)
+                send_event_to_server(server_socket, event)
                 queue.remove(event)
         # in case clients has no new event
         server_socket.sendall(b'\n')
@@ -198,8 +198,8 @@ def connect(id_number, queue):
 
 def monitor_and_connect(id_number):
     queue = []
-    observer = Watcher(folder_path)
-    observer.run(server_ip, server_port, refresh_rate, id_number, queue)
+    observer = Watcher()
+    observer.run(id_number, queue)
 
 
 # check if the received ip address is in correct format.
@@ -231,12 +231,12 @@ if __name__ == '__main__':
 
         # run client
         if len(sys.argv) == 5:
-            client_id = sign_to_server(server_ip, server_port, folder_path)
-            monitor_and_connect(server_ip, server_port, folder_path, refresh_rate, client_id)
+            client_id = sign_to_server()
+            monitor_and_connect(client_id)
 
         if len(sys.argv) == 6:
             client_id = sys.argv[CONST.ARG_FIVE()]
-            monitor_and_connect(server_ip, server_port, folder_path, refresh_rate, client_id)
+            monitor_and_connect(client_id)
 
     except ValueError:
         print("Error - Wrong Arguments!")

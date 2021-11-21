@@ -127,6 +127,7 @@ def check_for_new_events(client_socket, client_id):
 
                 # new file path
                 path = os.path.join(client_id, filename)
+                print(path)
 
                 # in case file's folder doesn't exist, create it
                 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -153,10 +154,13 @@ def check_for_new_events(client_socket, client_id):
                 path = client_file.readline().strip().decode()
                 print("delete in send event_to_client: ")
                 root_dir = os.path.abspath(os.curdir)
-                folder = os.path.join(root_dir, path.decode("utf-8"))
+                folder = os.path.join(root_dir, client_id)
+                folder = os.path.join(folder, path)
+                print(path)
                 print(folder)
                 os.remove(folder)
-                # TODO add this to list.
+                create_event = Event(path, time.time(), "delete")
+                clients_queues[client_id].append(create_event)
             print("before getting data")
             data = client_file.readline().strip().decode()
             print("data: ")

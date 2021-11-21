@@ -150,10 +150,9 @@ def send_event_to_server(server_socket, event):
         print("need to to do something in move")
     if event.get_action() == 'delete':
         print("need to to do something in delete")
-        # file_name = os.path.join(folder_path, event.get_file())
         file_name = os.path.relpath(event.get_file(), folder_path)
-        print("realative path is: " + file_name)
-        server_socket.send(file_name.encode("utf-8"))
+        print("relative path is: " + file_name)
+        server_socket.sendall(file_name.encode("utf-8"))
 
 
 # def get_events_from_server(server_socket):

@@ -25,17 +25,17 @@ class Event:
 
 
 class Watcher:
-    def __init__(self, folder_path):
+    def __init__(self,):
         self.observer = Observer()
         self.folder = folder_path
 
-    def run(self, server_ip, server_port, refresh_rate, id_number, queue):
+    def run(self,id_number, queue):
         event_handler = Handler(queue)
         self.observer.schedule(event_handler, self.folder, recursive=True)
         self.observer.start()
         try:
             while True:
-                connect(server_ip, server_port, folder_patch, refresh_rate, id_number, queue)
+                connect(id_number, queue)
                 print("going to sleep")
                 time.sleep(refresh_rate)
         except:
@@ -99,7 +99,7 @@ class CONST:
         return 65535
 
 
-def sign_to_server(server_ip, server_port, folder_path):
+def sign_to_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
     with server_socket, server_socket.makefile('rb') as server_file:
@@ -114,13 +114,13 @@ def sign_to_server(server_ip, server_port, folder_path):
                 file_name = os.path.join(path, file)
                 relative_path = os.path.relpath(file_name, folder_path)
                 print(f'Sending {relative_path}')
-                send_and_create_file(server_socket, file_name, folder_path)
+                send_and_create_file(server_socket, file_name)
                 global last_update
                 last_update = time.time()
         return client_id
 
 
-def send_and_create_file(server_socket, file, folder_path):
+def send_and_create_file(server_socket, file):
     with open(file, "rb") as current_file:
         relative_path = os.path.relpath(file, folder_path)
         file_size = os.path.getsize(file)
@@ -137,21 +137,42 @@ def send_and_create_file(server_socket, file, folder_path):
     print('Done.')
 
 
-def send_event_to_server(server_socket, event, folder_path):
+def send_event_to_server(server_socket, event):
     print("action: " + event.get_action())
     server_socket.sendall(event.get_action().encode() + b'\n')
 
     if event.get_action() == 'create':
         print("sending file: " + event.get_file())
         send_and_create_file(server_socket, event.get_file(), folder_path)
+    if event.get_action() == 'modify':
+        print("need to to do something in modify")
+    if event.get_action() == 'move':
+        print("need to to do something in move")
+    if event.get_action() == 'delete':
+        print("need to to do something in delete")
+        # file_name = os.path.join(folder_path, event.get_file())
+        file_name = os.path.relpath(event.get_file(), folder_path)
+        print("realative path is: " + file_name)
+        server_socket.send(file_name.encode("utf-8"))
 
 
-def get_events_from_server():
-    pass
-    # TODO
+# def get_events_from_server(server_socket):
+#     print("get_events_from_server")
+#     file_path = server_socket.recv(128).decode('utf-8')
+#     print(file_path)
+#     file_size = server_socket.recv(128).decode('utf-8')
+#     print(file_size)
+#     # open file in client dir and write the data.
+#     path = os.path.join(folder_path, file_path)
+#     print(path)
+#     with open(path, 'wb') as current_file:
+#         data = server_socket.recv(128).decode('utf-8')
+#         while data:
+#             current_file.write(data)
+#             data = server_socket.recv(128).decode('utf-8')
 
 
-def connect(server_ip, server_port, folder_path, refresh_rate, id_number, queue):
+def connect(id_number, queue):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
     print("Connected to: " + server_ip)
@@ -167,6 +188,7 @@ def connect(server_ip, server_port, folder_path, refresh_rate, id_number, queue)
         # update server with client events
         while len(queue):
             for event in queue:
+                print("deal with event")
                 send_event_to_server(server_socket, event, folder_path)
                 queue.remove(event)
         # in case clients has no new event
@@ -174,9 +196,9 @@ def connect(server_ip, server_port, folder_path, refresh_rate, id_number, queue)
     print("disconected")
 
 
-def monitor_and_connect(server_ip, server_port, folder_patch, refresh_rate, id_number):
+def monitor_and_connect(id_number):
     queue = []
-    observer = Watcher(folder_patch)
+    observer = Watcher(folder_path)
     observer.run(server_ip, server_port, refresh_rate, id_number, queue)
 
 
@@ -199,7 +221,7 @@ if __name__ == '__main__':
     try:
         server_ip = sys.argv[CONST.ARG_ONE()]
         server_port = sys.argv[CONST.ARG_TWO()]
-        folder_patch = sys.argv[CONST.ARG_THREE()]
+        folder_path = sys.argv[CONST.ARG_THREE()]
         refresh_rate = int(sys.argv[CONST.ARG_FOUR()])
 
         # in case the port or ip address arent valid, exit
@@ -209,12 +231,12 @@ if __name__ == '__main__':
 
         # run client
         if len(sys.argv) == 5:
-            client_id = sign_to_server(server_ip, server_port, folder_patch)
-            monitor_and_connect(server_ip, server_port, folder_patch, refresh_rate, client_id)
+            client_id = sign_to_server(server_ip, server_port, folder_path)
+            monitor_and_connect(server_ip, server_port, folder_path, refresh_rate, client_id)
 
         if len(sys.argv) == 6:
             client_id = sys.argv[CONST.ARG_FIVE()]
-            monitor_and_connect(server_ip, server_port, folder_patch, refresh_rate, client_id)
+            monitor_and_connect(server_ip, server_port, folder_path, refresh_rate, client_id)
 
     except ValueError:
         print("Error - Wrong Arguments!")

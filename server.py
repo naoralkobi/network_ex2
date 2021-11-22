@@ -100,16 +100,21 @@ def new_client(client_socket):
         while True:
 
             # read line from client
-            current_line = client_file.readline()
+            action = client_file.readline().strip().decode()
 
             # if there are no more files, exit.
-            if not current_line:
+            if not action:
                 break
 
-            filename = current_line.strip().decode()
-            length = int(client_file.readline())
-            if create_file(client_file, client_id, filename, length):
-                break
+            current_line = client_file.readline().strip().decode()
+            if action == "create":
+                filename = current_line
+                length = int(client_file.readline())
+                if create_file(client_file, client_id, filename, length):
+                    break
+            elif action == "createFolder":
+                folder_name = current_line
+                create_folder(client_id, folder_name)
 
 
 def delete_file(client_source, client_id):
@@ -117,12 +122,23 @@ def delete_file(client_source, client_id):
     print("delete in send event_to_client: ")
     root_dir = os.path.abspath(os.curdir)
     folder = os.path.join(root_dir, client_id)
-    folder = os.path.join(folder, path)
+    to_be_deleted = os.path.join(folder, path)
     print(path)
-    print(folder)
-    os.remove(folder)
+    print(to_be_deleted)
+    if os.path.isdir(to_be_deleted):
+        os.rmdir(to_be_deleted)
+    else:
+        os.remove(to_be_deleted)
     delete_event = Event(path, time.time(), "delete")
     clients_queues[client_id].append(delete_event)
+
+
+def create_folder(client_id, folder_name):
+    path = os.path.join(client_id, folder_name)
+    if not os.path.exists(path):
+        os.mkdir(path)
+        create_event = Event(folder_name, time.time(), "createFolder")
+        clients_queues[client_id].append(create_event)
 
 
 def check_for_new_events(client_socket, client_id):
@@ -130,15 +146,12 @@ def check_for_new_events(client_socket, client_id):
         data = client_file.readline().strip().decode()
         while data != '':
             if data == "createFolder":
-                folder = client_file.readline().strip().decode()
-                path = os.path.join(client_id, folder)
-                os.makedirs(os.path.dirname(path), exist_ok=True)
+                folder_name = client_file.readline().strip().decode()
+                create_folder(client_id, folder_name)
 
             if data == "create":
-
                 filename = client_file.readline().strip().decode()
                 length = int(client_file.readline())
-
                 create_file(client_file, client_id, filename, length)
 
             if data == "modify":

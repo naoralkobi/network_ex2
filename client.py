@@ -51,7 +51,10 @@ class Handler(FileSystemEventHandler):
         self.queue = queue
 
     def on_created(self, event):
-        self.queue.append(Event(event.src_path, time.time(), "create"))
+        if os.path.isdir(event.src_path):
+            self.queue.append(Event(event.src_path, time.time(), "createFolder"))
+        else:
+            self.queue.append(Event(event.src_path, time.time(), "create"))
         print("Watchdog received created event - % s." % event.src_path)
         # Event is created, you can process it now
 
@@ -137,13 +140,20 @@ def send_and_create_file(server_socket, file):
     print('Done.')
 
 
+def send_and_create_folder(server_socket, folder):
+    relative_path = os.path.relpath(folder, folder_path)
+    server_socket.sendall(relative_path.encode() + b'\n')
+
+
 def send_event_to_server(server_socket, event):
     print("action: " + event.get_action())
     server_socket.sendall(event.get_action().encode() + b'\n')
 
     if event.get_action() == 'create':
         print("sending file: " + event.get_file())
-        send_and_create_file(server_socket, event.get_file(), folder_path)
+        send_and_create_file(server_socket, event.get_file())
+    if event.get_action() == 'createFolder':
+        send_and_create_folder(server_socket, event.get_file())
     if event.get_action() == 'modify':
         print("need to to do something in modify")
     if event.get_action() == 'move':

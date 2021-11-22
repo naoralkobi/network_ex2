@@ -62,6 +62,30 @@ class CONST:
         return 65535
 
 
+def create_file(client_source, client_id, file_name, length):
+    print(f'Downloading {file_name}...\n  Expecting {length:,} bytes...', end='', flush=True)
+
+    # new file path
+    path = os.path.join(client_id, file_name)
+
+    # in case file's folder doesn't exist, create it
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    # read current file's data
+    with open(path, 'wb') as current_file:
+        while length:
+            current_chunk_size = min(length, 1024)
+            data = client_source.read(current_chunk_size)
+            if not data:
+                break
+            current_file.write(data)
+            length -= len(data)
+        else:  # only runs if while doesn't break and length==0
+            print('Complete')
+            create_event = Event(file_name, time.time(), "create")
+            clients_queues[client_id].append(create_event)
+
+
 def new_client(client_socket):
     # create new random id for client
     client_id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
@@ -84,83 +108,44 @@ def new_client(client_socket):
 
             filename = current_line.strip().decode()
             length = int(client_file.readline())
+            if create_file(client_file, client_id, filename, length):
+                break
 
-            print(f'Downloading {filename}...\n  Expecting {length:,} bytes...', end='', flush=True)
 
-            # new file path
-            path = os.path.join(client_id, filename)
-
-            # in case file's folder doesn't exist, create it
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-
-            # read current file's data
-            with open(path, 'wb') as current_file:
-                while length:
-                    current_chunk_size = min(length, 1024)
-                    data = client_file.read(current_chunk_size)
-                    if not data:
-                        break
-                    current_file.write(data)
-                    length -= len(data)
-                else:  # only runs if while doesn't break and length==0
-                    print('Complete')
-                    create_event = Event(filename, time.time(), "create")
-                    clients_queues[client_id].append(create_event)
-                    # print(clients_queues)
-                    continue
-
-            # socket was closed early.
-            print('Incomplete')
-            break
+def delete_file(client_source, client_id):
+    path = client_source.readline().strip().decode()
+    print("delete in send event_to_client: ")
+    root_dir = os.path.abspath(os.curdir)
+    folder = os.path.join(root_dir, client_id)
+    folder = os.path.join(folder, path)
+    print(path)
+    print(folder)
+    os.remove(folder)
+    delete_event = Event(path, time.time(), "delete")
+    clients_queues[client_id].append(delete_event)
 
 
 def check_for_new_events(client_socket, client_id):
     with client_socket.makefile('rb') as client_file:
         data = client_file.readline().strip().decode()
         while data != '':
-            if data == "create":
-
-                filename = client_file.readline().strip().decode()
-                length = int(client_file.readline())
-
-                print(f'Downloading {filename}...\n  Expecting {length:,} bytes...', end='', flush=True)
-
-                # new file path
-                path = os.path.join(client_id, filename)
-                print(path)
-
-                # in case file's folder doesn't exist, create it
+            if data == "createFolder":
+                folder = client_file.readline().strip().decode()
+                path = os.path.join(client_id, folder)
                 os.makedirs(os.path.dirname(path), exist_ok=True)
 
-                # read current file's data
-                with open(path, 'wb') as current_file:
-                    while length:
-                        current_chunk_size = min(length, 1024)
-                        data = client_file.read(current_chunk_size)
-                        if not data:
-                            break
-                        current_file.write(data)
-                        length -= len(data)
-                    else:  # only runs if while doesn't break and length==0
-                        print('Complete')
-                        create_event = Event(filename, time.time(), "create")
-                        clients_queues[client_id].append(create_event)
+            if data == "create":
+                filename = client_file.readline().strip().decode()
+                length = int(client_file.readline())
+                create_file(client_file, client_id, filename, length)
 
             if data == "modify":
                 print("modify in send event_to_client")
             if data == "move":
                 print("move in send event_to_client")
             if data == "delete":
-                path = client_file.readline().strip().decode()
-                print("delete in send event_to_client: ")
-                root_dir = os.path.abspath(os.curdir)
-                folder = os.path.join(root_dir, client_id)
-                folder = os.path.join(folder, path)
-                print(path)
-                print(folder)
-                os.remove(folder)
-                create_event = Event(path, time.time(), "delete")
-                clients_queues[client_id].append(create_event)
+                delete_file(client_file, client_id)
+
             print("before getting data")
             data = client_file.readline().strip().decode()
             print("data: ")

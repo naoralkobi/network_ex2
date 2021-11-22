@@ -60,6 +60,11 @@ class Handler(FileSystemEventHandler):
         # Event is created, you can process it now
 
     def on_moved(self, event):
+        # old_path = os.path.relpath(os.path.basename(event.src_path))
+        # new_path = os.path.relpath(os.path.basename(event.src_dest))
+        # if old_path == new_path:
+        #     self.queue.append(Event(event.src_dest, time.time(), "rename"))
+        
         self.queue.append(Event(event.src_path, time.time(), "delete"))
         if event.dest_path.startswith(folder_path) and os.path.isdir(event.dest_path):
             self.queue.append(Event(event.dest_path, time.time(), "createFolder"))

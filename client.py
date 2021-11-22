@@ -6,6 +6,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 last_update = 0
+add_to_queue = True
 
 
 class Event:
@@ -58,14 +59,11 @@ class Handler(FileSystemEventHandler):
         print("Watchdog received created event - % s." % event.src_path)
         # Event is created, you can process it now
 
-    def on_modified(self, event):
-        # self.queue.append(Event(event.src_path, time.time(), "modify"))
-        print("Watchdog received modified event - % s." % event.src_path)
-        # Event is modified, you can process it now
-
     def on_moved(self, event):
         self.queue.append(Event(event.src_path, time.time(), "delete"))
-        if event.dest_path.startswith(folder_path):
+        if event.dest_path.startswith(folder_path) and os.path.isdir(event.dest_path):
+            self.queue.append(Event(event.dest_path, time.time(), "createFolder"))
+        else:
             self.queue.append(Event(event.dest_path, time.time(), "create"))
         print("Watchdog received moved event - % s." % event.src_path)
 
@@ -160,10 +158,10 @@ def send_event_to_server(server_socket, event):
     if event.get_action() == 'create':
         print("sending file: " + event.get_file())
         send_and_create_file(server_socket, event.get_file())
+
     if event.get_action() == 'createFolder':
         send_and_create_folder(server_socket, event.get_file())
-    if event.get_action() == 'modify':
-        print("need to to do something in modify")
+
     if event.get_action() == 'move':
         print("need to to do something in move")
         # if move is in the client folder - send the new path

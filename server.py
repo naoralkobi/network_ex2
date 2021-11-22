@@ -129,23 +129,27 @@ def delete_file(client_source, client_id):
     if not os.path.exists(to_be_deleted):
         return
     if os.path.isdir(to_be_deleted):
-        delete_folder(to_be_deleted)
+        delete_folder(to_be_deleted, client_id)
     else:
         os.remove(to_be_deleted)
     delete_event = Event(path, time.time(), "delete")
     clients_queues[client_id].append(delete_event)
 
 
-def delete_folder(folder_path):
+def delete_folder(folder_path, client_id):
     if os.listdir(folder_path):
         dir_list = os.listdir(folder_path)
         for file in reversed(dir_list):
             current = os.path.join(folder_path, file)
             if not os.path.isdir(current):
                 os.remove(current)
+                delete_event = Event(current, time.time(), "delete")
+                clients_queues[client_id].append(delete_event)
                 continue
-            delete_folder(current)
+            delete_folder(current, client_id)
     os.rmdir(folder_path)
+    delete_event = Event(folder_path, time.time(), "delete")
+    clients_queues[client_id].append(delete_event)
 
 
 def create_folder(client_id, folder_name):

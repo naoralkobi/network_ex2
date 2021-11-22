@@ -25,17 +25,17 @@ class Event:
 
 
 class Watcher:
-    def __init__(self,):
+    def __init__(self):
         self.observer = Observer()
         self.folder = folder_path
 
-    def run(self,id_number, queue):
+    def run(self, queue):
         event_handler = Handler(queue)
         self.observer.schedule(event_handler, self.folder, recursive=True)
         self.observer.start()
         try:
             while True:
-                connect(id_number, queue)
+                connect(queue)
                 print("going to sleep")
                 time.sleep(refresh_rate)
         except:
@@ -64,7 +64,9 @@ class Handler(FileSystemEventHandler):
         # Event is modified, you can process it now
 
     def on_moved(self, event):
-        self.queue.append(Event(event.src_path, time.time(), "move"))
+        if event.dest_path.startswith(folder_path):
+            self.queue.append(Event(event.dest_path, time.time(), "create"))
+        self.queue.append(Event(event.src_path, time.time(), "delete"))
         print("Watchdog received moved event - % s." % event.src_path)
 
     def on_deleted(self, event):
@@ -158,11 +160,19 @@ def send_event_to_server(server_socket, event):
         print("need to to do something in modify")
     if event.get_action() == 'move':
         print("need to to do something in move")
+        # if move is in the client folder - send the new path
+        if event.dest_path.startswith(folder_path):
+            server_socket.sendall(event.dest_path.encode("utf-8") + b'\n')
+        # send empty path
+        else:
+            server_socket.sendall(b'')
+        # for delete.
+        server_socket.sendall(event.src_path.encode("utf-8") + b'\n')
     if event.get_action() == 'delete':
         print("need to to do something in delete")
         file_name = os.path.relpath(event.get_file(), folder_path)
         print("relative path is: " + file_name)
-        server_socket.sendall(file_name.encode("utf-8"))
+        server_socket.sendall(file_name.encode("utf-8") + b'\n')
 
 
 # def get_events_from_server(server_socket):
@@ -181,14 +191,14 @@ def send_event_to_server(server_socket, event):
 #             data = server_socket.recv(128).decode('utf-8')
 
 
-def connect(id_number, queue):
+def connect(queue):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
     print("Connected to: " + server_ip)
     with server_socket:
         # global last_update
         # # send id to server
-        server_socket.sendall(id_number.encode("utf-8") + b'\n')
+        server_socket.sendall(client_id.encode("utf-8") + b'\n')
         # print("timer sent: ")
         # print(last_update)
         # server_socket.send(str(last_update).encode("utf-8"))
@@ -208,7 +218,7 @@ def connect(id_number, queue):
 def monitor_and_connect(id_number):
     queue = []
     observer = Watcher()
-    observer.run(id_number, queue)
+    observer.run(queue)
 
 
 # check if the received ip address is in correct format.

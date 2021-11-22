@@ -135,17 +135,28 @@ def check_for_new_events(client_socket, client_id):
                 os.makedirs(os.path.dirname(path), exist_ok=True)
 
             if data == "create":
+
                 filename = client_file.readline().strip().decode()
                 length = int(client_file.readline())
+
                 create_file(client_file, client_id, filename, length)
 
             if data == "modify":
                 print("modify in send event_to_client")
             if data == "move":
                 print("move in send event_to_client")
+                dest_path = client_file.readline().strip().decode()
+                src_path = client_file.readline().strip().decode()
+                # the new path is in the client folder
+                if dest_path != b'':
+                    create_event = Event(dest_path, time.time(), "create")
+                    clients_queues[client_id].append(create_event)
+                # delete original file.
+                create_event = Event(src_path, time.time(), "delete")
+                clients_queues[client_id].append(create_event)
+
             if data == "delete":
                 delete_file(client_file, client_id)
-
             print("before getting data")
             data = client_file.readline().strip().decode()
             print("data: ")

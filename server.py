@@ -62,30 +62,6 @@ class CONST:
         return 65535
 
 
-def create_file(client_source, client_id, file_name, length):
-    print(f'Downloading {file_name}...\n  Expecting {length:,} bytes...', end='', flush=True)
-
-    # new file path
-    path = os.path.join(client_id, file_name)
-
-    # in case file's folder doesn't exist, create it
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
-    # read current file's data
-    with open(path, 'wb') as current_file:
-        while length:
-            current_chunk_size = min(length, 1024)
-            data = client_source.read(current_chunk_size)
-            if not data:
-                break
-            current_file.write(data)
-            length -= len(data)
-        else:  # only runs if while doesn't break and length==0
-            print('Complete')
-            create_event = Event(file_name, time.time(), "create")
-            clients_queues[client_id].append(create_event)
-
-
 def new_client(client_socket):
     # create new random id for client
     client_id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
@@ -117,6 +93,30 @@ def new_client(client_socket):
                 create_folder(client_id, folder_name)
 
 
+def create_file(client_source, client_id, file_name, length):
+    print(f'Downloading {file_name}...\n  Expecting {length:,} bytes...', end='', flush=True)
+
+    # new file path
+    path = os.path.join(client_id, file_name)
+
+    # in case file's folder doesn't exist, create it
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    # read current file's data
+    with open(path, 'wb') as current_file:
+        while length:
+            current_chunk_size = min(length, 1024)
+            data = client_source.read(current_chunk_size)
+            if not data:
+                break
+            current_file.write(data)
+            length -= len(data)
+        else:  # only runs if while doesn't break and length==0
+            print('Complete')
+            create_event = Event(file_name, time.time(), "create")
+            clients_queues[client_id].append(create_event)
+
+
 def delete_file(client_source, client_id):
     path = client_source.readline().strip().decode()
     print("delete in send event_to_client: ")
@@ -125,20 +125,34 @@ def delete_file(client_source, client_id):
     to_be_deleted = os.path.join(folder, path)
     print(path)
     print(to_be_deleted)
+    # in case folder is empty
+    if not os.path.exists(to_be_deleted):
+        return
     if os.path.isdir(to_be_deleted):
-        os.rmdir(to_be_deleted)
+        delete_folder(to_be_deleted)
     else:
         os.remove(to_be_deleted)
     delete_event = Event(path, time.time(), "delete")
     clients_queues[client_id].append(delete_event)
 
 
+def delete_folder(folder_path):
+    if os.listdir(folder_path):
+        dir_list = os.listdir(folder_path)
+        for file in reversed(dir_list):
+            current = os.path.join(folder_path, file)
+            if not os.path.isdir(current):
+                os.remove(current)
+                continue
+            delete_folder(current)
+    os.rmdir(folder_path)
+
+
 def create_folder(client_id, folder_name):
     path = os.path.join(client_id, folder_name)
-    if not os.path.exists(path):
-        os.mkdir(path)
-        create_event = Event(folder_name, time.time(), "createFolder")
-        clients_queues[client_id].append(create_event)
+    os.makedirs(path, exist_ok=True)
+    create_event = Event(folder_name, time.time(), "createFolder")
+    clients_queues[client_id].append(create_event)
 
 
 def check_for_new_events(client_socket, client_id):
@@ -154,8 +168,6 @@ def check_for_new_events(client_socket, client_id):
                 length = int(client_file.readline())
                 create_file(client_file, client_id, filename, length)
 
-            if data == "modify":
-                print("modify in send event_to_client")
             if data == "move":
                 print("move in send event_to_client")
                 dest_path = client_file.readline().strip().decode()

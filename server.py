@@ -1,18 +1,19 @@
 import socket
 import sys
-import string
-import random
 import time
 import os
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
-clients_queues = {}
+last_update = time.time()
+add_to_queue = True
 
 
 class Event:
-    def __init__(self, f, t, a):
-        self.file = f
-        self.time = t
-        self.action = a
+    def __init__(self, file, time, action):
+        self.file = file
+        self.time = time
+        self.action = action
 
     def get_file(self):
         return self.file
@@ -24,10 +25,84 @@ class Event:
         return self.action
 
 
+class Watcher:
+    def __init__(self):
+        self.observer = Observer()
+        self.folder = folder_path
+
+    def run(self, queue):
+        event_handler = Handler(queue)
+        self.observer.schedule(event_handler, self.folder, recursive=True)
+        self.observer.start()
+        try:
+            while True:
+                connect(queue)
+                print("going to sleep")
+                time.sleep(refresh_rate)
+        except:
+            self.observer.stop()
+            print("Observer Stopped")
+            self.observer.join()
+
+
+class Handler(FileSystemEventHandler):
+    patterns = ["*.fits"]
+
+    def __init__(self, queue):
+        self.queue = queue
+
+    def on_created(self, event):
+        if not add_to_queue:
+            return
+        if os.path.isdir(event.src_path):
+            self.queue.append(Event(event.src_path, time.time(), "createFolder"))
+        else:
+            self.queue.append(Event(event.src_path, time.time(), "create"))
+        print("Watchdog received created event - % s." % event.src_path)
+        # Event is created, you can process it now
+
+    def on_moved(self, event):
+        if not add_to_queue:
+            return
+        # old_path = os.path.relpath(os.path.basename(event.src_path))
+        # new_path = os.path.relpath(os.path.basename(event.src_dest))
+        # if old_path == new_path:
+        #     self.queue.append(Event(event.src_dest, time.time(), "rename"))
+
+        self.queue.append(Event(event.src_path, time.time(), "delete"))
+        if event.dest_path.startswith(folder_path) and os.path.isdir(event.dest_path):
+            self.queue.append(Event(event.dest_path, time.time(), "createFolder"))
+        else:
+            self.queue.append(Event(event.dest_path, time.time(), "create"))
+        print("Watchdog received moved event - % s." % event.src_path)
+
+    def on_deleted(self, event):
+        if not add_to_queue:
+            return
+        self.queue.append(Event(event.src_path, time.time(), "delete"))
+        print("Watchdog received delete event - % s." % event.src_path)
+
+
 class CONST:
     @staticmethod
     def ARG_ONE():
         return 1
+
+    @staticmethod
+    def ARG_TWO():
+        return 2
+
+    @staticmethod
+    def ARG_THREE():
+        return 3
+
+    @staticmethod
+    def ARG_FOUR():
+        return 4
+
+    @staticmethod
+    def ARG_FIVE():
+        return 5
 
     @staticmethod
     def STARTING_PORT():
@@ -38,42 +113,83 @@ class CONST:
         return 65535
 
 
-def new_client(client_socket):
-    # create new random id for client
-    client_id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
+def sign_to_server():
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.connect((server_ip, int(server_port)))
+    with server_socket, server_socket.makefile('rb') as server_file:
+        # send an empty message to get id
+        server_socket.sendall(b'\n')
+        client_id = server_file.readline().decode().strip()
+        print("Server sent id: ", client_id)
 
-    # send id to client
-    client_socket.sendall(client_id.encode("utf-8") + b'\n')
+        # send every file to the server
+        for path, dirs, files in os.walk(folder_path):
+            for file in files:
+                file_name = os.path.join(path, file)
+                relative_path = os.path.relpath(file_name, folder_path)
+                print(f'Sending {relative_path}')
+                server_socket.sendall(b'create\n')
+                send_and_create_file(server_socket, file_name)
+                global last_update
+                last_update = time.time()
+            for dir in dirs:
+                folder_name = os.path.join(path, dir)
+                server_socket.sendall(b'createFolder\n')
+                send_and_create_folder(server_socket, folder_name)
 
-    # create folder with the name : id
-    os.mkdir(client_id)
-    clients_queues[client_id] = []
-    with client_socket, client_socket.makefile('rb') as client_file:
-        while True:
-
-            # read line from client
-            action = client_file.readline().strip().decode()
-
-            # if there are no more files, exit.
-            if not action:
-                break
-
-            current_line = client_file.readline().strip().decode()
-            if action == "create":
-                filename = current_line
-                length = int(client_file.readline())
-                if create_file(client_file, client_id, filename, length):
-                    break
-            elif action == "createFolder":
-                folder_name = current_line
-                create_folder(client_id, folder_name)
+    return client_id
 
 
-def create_file(client_source, client_id, file_name, length):
+def send_and_create_file(server_socket, file):
+    with open(file, "rb") as current_file:
+        relative_path = os.path.relpath(file, folder_path)
+        file_size = os.path.getsize(file)
+        server_socket.sendall(relative_path.encode() + b'\n')
+
+        # send file size
+        server_socket.sendall(str(file_size).encode() + b'\n')
+
+        # Send the file in chunks so large files can be handled.
+        data = current_file.read(1024)
+        while data:
+            server_socket.sendall(data)
+            data = current_file.read(1024)
+    print('Done.')
+
+
+def send_and_create_folder(server_socket, folder):
+    relative_path = os.path.relpath(folder, folder_path)
+    server_socket.sendall(relative_path.encode() + b'\n')
+
+
+def send_event_to_server(server_socket, event):
+    print("action: " + event.get_action())
+    server_socket.sendall(event.get_action().encode() + b'\n')
+
+    if event.get_action() == 'create':
+        print("sending file: " + event.get_file())
+        send_and_create_file(server_socket, event.get_file())
+
+    if event.get_action() == 'createFolder':
+        send_and_create_folder(server_socket, event.get_file())
+
+    if event.get_action() == 'delete':
+        print("need to to do something in delete")
+        file_name = os.path.relpath(event.get_file(), folder_path)
+        print("relative path is: " + file_name)
+        server_socket.sendall(file_name.encode("utf-8") + b'\n')
+
+# add from here
+def create_folder(folder_name):
+    path = os.path.join(folder_path, folder_name)
+    os.makedirs(path, exist_ok=True)
+
+
+def create_file(server_source, file_name, length):
     print(f'Downloading {file_name}...\n  Expecting {length:,} bytes...', end='', flush=True)
 
     # new file path
-    path = os.path.join(client_id, file_name)
+    path = os.path.join(folder_path, file_name)
 
     # in case file's folder doesn't exist, create it
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -82,186 +198,135 @@ def create_file(client_source, client_id, file_name, length):
     with open(path, 'wb') as current_file:
         while length:
             current_chunk_size = min(length, 1024)
-            data = client_source.read(current_chunk_size)
+            data = server_source.read(current_chunk_size)
             if not data:
                 break
             current_file.write(data)
             length -= len(data)
         else:  # only runs if while doesn't break and length==0
             print('Complete')
-            create_event = Event(file_name, time.time(), "create")
-            clients_queues[client_id].append(create_event)
 
 
-def delete_file(client_source, client_id):
-    path = client_source.readline().strip().decode()
+def delete_folder(folder):
+    if os.listdir(folder):
+        dir_list = os.listdir(folder)
+        for file in reversed(dir_list):
+            current = os.path.join(folder, file)
+            if not os.path.isdir(current):
+                os.remove(current)
+                continue
+            delete_folder(current)
+    os.rmdir(folder)
+
+
+def delete_file(server_source):
+    path = server_source.readline().strip().decode()
     print("delete in send event_to_client: ")
-    root_dir = os.path.abspath(os.curdir)
-    folder = os.path.join(root_dir, client_id)
-    to_be_deleted = os.path.join(folder, path)
+    to_be_deleted = os.path.join(folder_path, path)
     print(path)
     print(to_be_deleted)
     # in case folder is empty
     if not os.path.exists(to_be_deleted):
         return
     if os.path.isdir(to_be_deleted):
-        delete_folder(to_be_deleted, client_id)
+        delete_folder(to_be_deleted)
     else:
         os.remove(to_be_deleted)
-    delete_event = Event(path, time.time(), "delete")
-    clients_queues[client_id].append(delete_event)
 
 
-def delete_folder(folder_path, client_id):
-    dir_list = os.listdir(folder_path)
-    if dir_list:
-        for file in reversed(dir_list):
-            current = os.path.join(folder_path, file)
-            if not os.path.isdir(current):
-                os.remove(current)
-                delete_event = Event(current, time.time(), "delete")
-                clients_queues[client_id].append(delete_event)
-                continue
-            delete_folder(current, client_id)
-    os.rmdir(folder_path)
-    delete_event = Event(folder_path, time.time(), "delete")
-    clients_queues[client_id].append(delete_event)
-
-
-def create_folder(client_id, folder_name):
-    path = os.path.join(client_id, folder_name)
-    os.makedirs(path, exist_ok=True)
-    create_event = Event(folder_name, time.time(), "createFolder")
-    clients_queues[client_id].append(create_event)
-
-
-def check_for_new_events(client_socket, client_id):
-    with client_socket.makefile('rb') as client_file:
-        data = client_file.readline().strip().decode()
+def get_events_from_server(server_socket):
+    with server_socket.makefile('rb') as server_file:
+        data = server_file.readline().strip().decode()
         while data != '':
             if data == "createFolder":
-                folder_name = client_file.readline().strip().decode()
-                create_folder(client_id, folder_name)
+                folder_name = server_file.readline().strip().decode()
+                create_folder(folder_name)
 
             if data == "create":
-                filename = client_file.readline().strip().decode()
-                length = int(client_file.readline())
-                create_file(client_file, client_id, filename, length)
-
-            if data == "move":
-                print("move in send event_to_client")
-                dest_path = client_file.readline().strip().decode()
-                src_path = client_file.readline().strip().decode()
-                # the new path is in the client folder
-                if dest_path != b'':
-                    create_event = Event(dest_path, time.time(), "create")
-                    clients_queues[client_id].append(create_event)
-                # delete original file.
-                create_event = Event(src_path, time.time(), "delete")
-                clients_queues[client_id].append(create_event)
+                filename = server_file.readline().strip().decode()
+                length = int(server_file.readline())
+                create_file(server_file, filename, length)
 
             if data == "delete":
-                delete_file(client_file, client_id)
+                delete_file(server_file)
             print("before getting data")
-            data = client_file.readline().strip().decode()
+            data = server_file.readline().strip().decode()
             print("data: ")
             print(data)
     print("no new events from client")
+# add to here
 
 
-def existing_client(client_socket, client_id):
-    print("client id: " + client_id)
-    with client_socket.makefile('rb') as client_file:
-        client_last_update_time = float(client_file.readline().strip().decode())
-        print("time got:")
-        print(client_last_update_time)
-
-        for event in clients_queues[client_id]:
-            # in case event in queue happened after last event in client, send it to client
-            if isinstance(event, Event) and client_last_update_time < event.get_time():
-                print("current event time:")
-                print(event.get_time())
-                send_event_to_client(event, client_socket, client_id)
-
-        client_socket.sendall(b'\n')
-    # get event from client
-    check_for_new_events(client_socket, client_id)
-
-
-# add from here
-def send_and_create_file(client_socket, file, client_id):
-    relative_path = os.path.relpath(file, os.path.join(os.path.abspath(os.curdir), client_id))
-    with open(relative_path, "rb") as current_file:
-        file_size = os.path.getsize(file)
-        client_socket.sendall(relative_path.encode() + b'\n')
-
-        # send file size
-        client_socket.sendall(str(file_size).encode() + b'\n')
-
-        # Send the file in chunks so large files can be handled.
-        data = current_file.read(1024)
-        while data:
-            client_socket.sendall(data)
-            data = current_file.read(1024)
-    print('Done.')
-
-
-def send_and_create_folder(client_socket, folder, client_id):
-    relative_path = os.path.relpath(folder, os.path.join(os.path.abspath(os.curdir), client_id))
-    client_socket.sendall(relative_path.encode() + b'\n')
-
-
-def send_event_to_client(event, client_socket, client_id):
-    print("action: " + event.get_action())
-    client_socket.sendall(event.get_action().encode() + b'\n')
-
-    if event.get_action() == 'create':
-        print("sending file: " + event.get_file())
-        send_and_create_file(client_socket, event.get_file(), client_id)
-
-    if event.get_action() == 'createFolder':
-        send_and_create_folder(client_socket, event.get_file(), client_id)
-
-    if event.get_action() == 'delete':
-        folder_path = os.path.join(os.path.abspath(os.curdir), client_id)
-        print("need to to do something in delete")
-        file_name = os.path.relpath(event.get_file(), folder_path)
-        print("relative path is: " + file_name)
-        client_socket.sendall(file_name.encode("utf-8") + b'\n')
-# add from here
-
-
-def server():
+def connect(queue):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(('', int(port_number)))
-    server_socket.listen(1)
-    while True:
-        client_socket, client_address = server_socket.accept()
-        print('Connection from: ', client_address)
-        with client_socket, client_socket.makefile('rb') as client_file:
+    server_socket.connect((server_ip, int(server_port)))
+    print("Connected to: " + server_ip)
+    with server_socket:
+        global add_to_queue
+        add_to_queue = False
+        global last_update
+        # send id to server
+        server_socket.sendall(client_id.encode("utf-8") + b'\n')
+        print("timer sent: ")
+        print(last_update)
+        server_socket.send(str(last_update).encode("utf-8") + b'\n')
+        get_events_from_server(server_socket)
+        add_to_queue = True
 
-            # get empty byte or id number from client
-            data = client_file.readline().strip().decode()
-
-            # in case of empty byte, give new client an id
-            if data == '':
-                new_client(client_socket)
-
-            # in case of an already existing client
-            else:
-                existing_client(client_socket, data)
-        print('Client disconnected')
+        # update server with client events
+        while len(queue):
+            for event in queue:
+                print("deal with event")
+                send_event_to_server(server_socket, event)
+                queue.remove(event)
+        # in case clients has no new event
+        server_socket.sendall(b'\n')
+    print("disconected")
 
 
+def monitor_and_connect(id_number):
+    queue = []
+    observer = Watcher()
+    observer.run(queue)
+
+
+# check if the received ip address is in correct format.
+def check_ip(ip_address):
+    ip = ip_address.split(".")
+
+    # in case the address doesnt has 4 ".", it is invalid
+    if len(ip) != 4:
+        return False
+    # in case one of the segments in the address isn't in the wanted range, it is invalid
+    for num in ip:
+        if int(num) > 255 or int(num) < 0:
+            return False
+    return True
+
+
+# runs the client program
 if __name__ == '__main__':
     try:
-        port_number = sys.argv[CONST.ARG_ONE()]
+        server_ip = sys.argv[CONST.ARG_ONE()]
+        server_port = sys.argv[CONST.ARG_TWO()]
+        folder_path = sys.argv[CONST.ARG_THREE()]
+        refresh_rate = int(sys.argv[CONST.ARG_FOUR()])
+
         # in case the port or ip address arent valid, exit
-        if int(port_number) < CONST.STARTING_PORT() or int(port_number) > CONST.ENDING_PORT():
+        if int(server_port) < CONST.STARTING_PORT() or int(server_port) > CONST.ENDING_PORT() \
+                or not check_ip(server_ip):
             raise ValueError
 
-        # run server
-        server()
+        # run client
+        if len(sys.argv) == 5:
+            client_id = sign_to_server()
+            monitor_and_connect(client_id)
+
+        if len(sys.argv) == 6:
+            client_id = sys.argv[CONST.ARG_FIVE()]
+            os.makedirs(folder_path, exist_ok=True)
+            monitor_and_connect(client_id)
+
     except ValueError:
         print("Error - Wrong Arguments!")
         sys.exit(1)

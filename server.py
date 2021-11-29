@@ -111,6 +111,9 @@ def delete_file(client_source, client_id):
         delete_folder(to_be_deleted, client_id)
     else:
         os.remove(to_be_deleted)
+    for event in clients_queues[client_id]:
+        if event.get_file == path and event.get_action != "delete":
+            clients_queues[client_id].remove(event.get_file)
     delete_event = Event(path, event_time, "delete")
     clients_queues[client_id].append(delete_event)
 
@@ -184,6 +187,7 @@ def send_and_create_file(client_socket, file, client_id):
     try:
         with open(current_file_path, "rb") as current_file:
             file_size = os.path.getsize(current_file_path)
+
             client_socket.sendall(file.encode() + b'\n')
 
             # send file size
@@ -199,30 +203,17 @@ def send_and_create_file(client_socket, file, client_id):
     print('Done.')
 
 
-def send_and_create_folder(client_socket, folder, client_id):
-    relative_path = os.path.relpath(folder, os.path.join(os.path.abspath(os.curdir), client_id))
-    client_socket.sendall(relative_path.encode() + b'\n')
-    print("5.sent path to create folder : " + relative_path)
-
-
 def send_event_to_client(event, client_socket, client_id):
     print("3. action sent: " + event.get_action())
     client_socket.sendall(event.get_action().encode() + b'\n')
     print("4. path sent: " + event.get_file())
-
+    
     if event.get_action() == 'create':
         send_and_create_file(client_socket, event.get_file(), client_id)
 
-    if event.get_action() == 'createFolder':
-        send_and_create_folder(client_socket, event.get_file(), client_id)
-
-    if event.get_action() == 'delete':
-        folder_path = os.path.join(os.path.abspath(os.curdir), client_id)
-        print("need to to do something in delete")
-        file_name = os.path.relpath(event.get_file(), folder_path)
-        print("relative path is: " + file_name)
-        client_socket.sendall(file_name.encode("utf-8") + b'\n')
-# add from here
+    else:
+        client_socket.sendall(event.get_file().encode() + b'\n')
+# add to here
 
 
 def server():

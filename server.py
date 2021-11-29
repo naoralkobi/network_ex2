@@ -62,14 +62,16 @@ def new_client(client_socket):
             if action == "create":
                 filename = current_line
                 length = int(client_file.readline())
-                if create_file(client_file, client_id, filename, length):
+                event_time = float(client_file.readline().strip().decode())
+                if create_file(client_file, client_id, filename, length, event_time):
                     break
             elif action == "createFolder":
                 folder_name = current_line
-                create_folder(client_id, folder_name)
+                event_time = float(client_file.readline().strip().decode())
+                create_folder(client_id, folder_name, event_time)
 
 
-def create_file(client_source, client_id, file_name, length):
+def create_file(client_source, client_id, file_name, length, event_time):
     print(f'Downloading {file_name}...\n  Expecting {length:,} bytes...', end='', flush=True)
 
     # new file path
@@ -89,13 +91,14 @@ def create_file(client_source, client_id, file_name, length):
             length -= len(data)
         else:  # only runs if while doesn't break and length==0
             print('Complete')
-            create_event = Event(file_name, time.time(), "create")
+            create_event = Event(file_name, event_time, "create")
             clients_queues[client_id].append(create_event)
 
 
 def delete_file(client_source, client_id):
     path = client_source.readline().strip().decode()
     print("delete in send event_to_client: ")
+    event_time = float(client_source.readline().strip().decode())
     root_dir = os.path.abspath(os.curdir)
     folder = os.path.join(root_dir, client_id)
     to_be_deleted = os.path.join(folder, path)
@@ -108,7 +111,7 @@ def delete_file(client_source, client_id):
         delete_folder(to_be_deleted, client_id)
     else:
         os.remove(to_be_deleted)
-    delete_event = Event(path, time.time(), "delete")
+    delete_event = Event(path, event_time, "delete")
     clients_queues[client_id].append(delete_event)
 
 
@@ -128,10 +131,10 @@ def delete_folder(folder_path, client_id):
     clients_queues[client_id].append(delete_event)
 
 
-def create_folder(client_id, folder_name):
+def create_folder(client_id, folder_name, event_time):
     path = os.path.join(client_id, folder_name)
     os.makedirs(path, exist_ok=True)
-    create_event = Event(folder_name, time.time(), "createFolder")
+    create_event = Event(folder_name, event_time, "createFolder")
     clients_queues[client_id].append(create_event)
 
 
@@ -141,24 +144,14 @@ def check_for_new_events(client_socket, client_id):
         while data != '':
             if data == "createFolder":
                 folder_name = client_file.readline().strip().decode()
-                create_folder(client_id, folder_name)
+                event_time = float(client_file.readline().strip().decode())
+                create_folder(client_id, folder_name, event_time)
 
             if data == "create":
                 filename = client_file.readline().strip().decode()
                 length = int(client_file.readline())
-                create_file(client_file, client_id, filename, length)
-
-            if data == "move":
-                print("move in send event_to_client")
-                dest_path = client_file.readline().strip().decode()
-                src_path = client_file.readline().strip().decode()
-                # the new path is in the client folder
-                if dest_path != b'':
-                    create_event = Event(dest_path, time.time(), "create")
-                    clients_queues[client_id].append(create_event)
-                # delete original file.
-                create_event = Event(src_path, time.time(), "delete")
-                clients_queues[client_id].append(create_event)
+                event_time = float(client_file.readline().strip().decode())
+                create_file(client_file, client_id, filename, length, event_time)
 
             if data == "delete":
                 delete_file(client_file, client_id)

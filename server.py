@@ -207,7 +207,7 @@ def send_event_to_client(event, client_socket, client_id):
     print("3. action sent: " + event.get_action())
     client_socket.sendall(event.get_action().encode() + b'\n')
     print("4. path sent: " + event.get_file())
-    
+
     if event.get_action() == 'create':
         send_and_create_file(client_socket, event.get_file(), client_id)
 

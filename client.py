@@ -5,7 +5,7 @@ import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-last_update = time.time()
+last_update = 0
 add_to_queue = True
 
 
@@ -180,6 +180,7 @@ def send_event_to_server(server_socket, event):
         print("relative path is: " + file_name)
         server_socket.sendall(file_name.encode("utf-8") + b'\n')
 
+
 # add from here
 def create_folder(folder_name):
     path = os.path.join(folder_path, folder_name)
@@ -220,8 +221,7 @@ def delete_folder(folder):
     os.rmdir(folder)
 
 
-def delete_file(server_source):
-    path = server_source.readline().strip().decode()
+def delete_file(path):
     print("delete in send event_to_client: ")
     to_be_deleted = os.path.join(folder_path, path)
     print(path)
@@ -239,21 +239,23 @@ def get_events_from_server(server_socket):
     with server_socket.makefile('rb') as server_file:
         data = server_file.readline().strip().decode()
         while data != '':
+            path = server_file.readline().strip().decode()
+            path = os.path.join(folder_path, path)
             if data == "createFolder":
-                folder_name = server_file.readline().strip().decode()
-                create_folder(folder_name)
+                create_folder(path)
 
             if data == "create":
-                filename = server_file.readline().strip().decode()
                 length = int(server_file.readline())
-                create_file(server_file, filename, length)
+                create_file(server_file, path, length)
 
             if data == "delete":
-                delete_file(server_file)
+                delete_file(path)
             print("before getting data")
             data = server_file.readline().strip().decode()
             print("data: ")
             print(data)
+    global last_update
+    last_update = time.time()
     print("no new events from client")
 # add to here
 

@@ -122,31 +122,35 @@ def sign_to_server():
         client_id = server_file.readline().decode().strip()
         print("Server sent id: ", client_id)
 
+        global last_update
         # send every file to the server
         for path, dirs, files in os.walk(folder_path):
             for file in files:
+                last_update = time.time()
                 file_name = os.path.join(path, file)
                 relative_path = os.path.relpath(file_name, folder_path)
                 print(f'Sending {relative_path}')
                 server_socket.sendall(b'create\n')
-                send_and_create_file(server_socket, file_name)
+                send_and_create_file(server_socket, file_name, str(last_update))
             for dir in dirs:
+                last_update = time.time()
                 folder_name = os.path.join(path, dir)
                 server_socket.sendall(b'createFolder\n')
-                send_and_create_folder(server_socket, folder_name)
-    global last_update
-    last_update = time.time()
+                send_and_create_folder(server_socket, folder_name, str(last_update))
     return client_id
 
 
-def send_and_create_file(server_socket, file):
+def send_and_create_file(server_socket, file, event_time):
     with open(file, "rb") as current_file:
+
         relative_path = os.path.relpath(file, folder_path)
         file_size = os.path.getsize(file)
         server_socket.sendall(relative_path.encode() + b'\n')
 
         # send file size
         server_socket.sendall(str(file_size).encode() + b'\n')
+
+        server_socket.sendall(event_time.encode() + b'\n')
 
         # Send the file in chunks so large files can be handled.
         data = current_file.read(1024)
@@ -156,9 +160,10 @@ def send_and_create_file(server_socket, file):
     print('Done.')
 
 
-def send_and_create_folder(server_socket, folder):
+def send_and_create_folder(server_socket, folder, event_time):
     relative_path = os.path.relpath(folder, folder_path)
     server_socket.sendall(relative_path.encode() + b'\n')
+    server_socket.sendall(event_time.encode() + b'\n')
 
 
 def send_event_to_server(server_socket, event):
@@ -167,16 +172,19 @@ def send_event_to_server(server_socket, event):
 
     if event.get_action() == 'create':
         print("sending file: " + event.get_file())
-        send_and_create_file(server_socket, event.get_file())
+        send_and_create_file(server_socket, event.get_file(), str(time.time()))
 
     if event.get_action() == 'createFolder':
-        send_and_create_folder(server_socket, event.get_file())
+        send_and_create_folder(server_socket, event.get_file(), str(time.time()))
 
     if event.get_action() == 'delete':
         print("need to to do something in delete")
         file_name = os.path.relpath(event.get_file(), folder_path)
         print("relative path is: " + file_name)
         server_socket.sendall(file_name.encode("utf-8") + b'\n')
+        global last_update
+        last_update = time.time()
+        server_socket.sendall(str(last_update).encode() + b'\n')
 
 
 # add from here

@@ -137,6 +137,7 @@ def sign_to_server():
                 server_socket.sendall(b'createFolder\n')
                 send_and_create_folder(server_socket, folder_name)
 
+    last_update = time.time()
     return client_id
 
 

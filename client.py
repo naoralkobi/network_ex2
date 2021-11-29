@@ -5,39 +5,56 @@ import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+# time of last update got from server
 last_update = 0
+
+# flag to mark when add event to queue and when not
 add_to_queue = True
 
 
+# holds information about the events in the folder - file, time and action
 class Event:
+
+    # constructor
     def __init__(self, file, time, action):
         self.file = file
         self.time = time
         self.action = action
 
+    # getter for file
     def get_file(self):
         return self.file
 
+    # getter for time
     def get_time(self):
         return self.time
 
+    # getter for action
     def get_action(self):
         return self.action
 
 
+# watch the folder and notify handler when change occurs
 class Watcher:
+
+    # constructor
     def __init__(self):
         self.observer = Observer()
+
+        # watch folder that has been received in args
         self.folder = folder_path
 
+    # run the watcher
     def run(self, queue):
         event_handler = Handler(queue)
         self.observer.schedule(event_handler, self.folder, recursive=True)
         self.observer.start()
         try:
             while True:
-                connect(queue)
+                # sync with server
+                sync(queue)
                 print("going to sleep")
+                # wait the received amount of seconds and re-sync
                 time.sleep(refresh_rate)
         except:
             self.observer.stop()
@@ -45,15 +62,25 @@ class Watcher:
             self.observer.join()
 
 
+# Handel every type of change in the folder
 class Handler(FileSystemEventHandler):
     patterns = ["*.fits"]
 
+    # constructor
     def __init__(self, queue):
         self.queue = queue
 
+    # in case of new file or folder
     def on_created(self, event):
-        if not add_to_queue:
+
+        # file name
+        name = os.path.basename(event.src_path)
+
+        # in case we dont want to save changes in queue or edited file, exit
+        if not add_to_queue or name[0:14] == ".goutputstream":
             return
+
+        # if it is folder - add event of new folder
         if os.path.isdir(event.src_path):
             self.queue.append(Event(event.src_path, time.time(), "createFolder"))
         else:
@@ -61,22 +88,37 @@ class Handler(FileSystemEventHandler):
         print("Watchdog received created event - % s." % event.src_path)
         # Event is created, you can process it now
 
+    # in a file has moved in or from the folder
     def on_moved(self, event):
+
+        # file name
+        name = os.path.basename(event.src_path)
+
+        # in case we dont want to save changes in queue, exit
         if not add_to_queue:
             return
-        # old_path = os.path.relpath(os.path.basename(event.src_path))
-        # new_path = os.path.relpath(os.path.basename(event.src_dest))
-        # if old_path == new_path:
-        #     self.queue.append(Event(event.src_dest, time.time(), "rename"))
 
+        # in case of edited file, delete original and send edited one
+        if name[0:14] == ".goutputstream":
+            self.queue.append(Event(event.dest_path, time.time(), "delete"))
+            self.queue.append(Event(event.dest_path, time.time(), "create"))
+            return
+
+        # delete file
         self.queue.append(Event(event.src_path, time.time(), "delete"))
+
+        # in case of moving folder, create event of new folder
         if event.dest_path.startswith(folder_path) and os.path.isdir(event.dest_path):
             self.queue.append(Event(event.dest_path, time.time(), "createFolder"))
         else:
             self.queue.append(Event(event.dest_path, time.time(), "create"))
         print("Watchdog received moved event - % s." % event.src_path)
+        print("event move to - % s." % event.dest_path)
 
+    # in case of deleted file or folder
     def on_deleted(self, event):
+
+        # in case we dont want to save changes in queue, exit
         if not add_to_queue:
             return
         self.queue.append(Event(event.src_path, time.time(), "delete"))
@@ -111,6 +153,10 @@ class CONST:
     @staticmethod
     def ENDING_PORT():
         return 65535
+
+    @staticmethod
+    def CHUNK_SIZE():
+        return 1024
 
 
 def sign_to_server():
@@ -153,10 +199,10 @@ def send_and_create_file(server_socket, file, event_time):
         server_socket.sendall(event_time.encode() + b'\n')
 
         # Send the file in chunks so large files can be handled.
-        data = current_file.read(1024)
+        data = current_file.read(CONST.CHUNK_SIZE())
         while data:
             server_socket.sendall(data)
-            data = current_file.read(1024)
+            data = current_file.read(CONST.CHUNK_SIZE())
     print('Done.')
 
 
@@ -206,7 +252,7 @@ def create_file(server_source, file_name, length):
     # read current file's data
     with open(path, 'wb') as current_file:
         while length:
-            current_chunk_size = min(length, 1024)
+            current_chunk_size = min(length, CONST.CHUNK_SIZE())
             data = server_source.read(current_chunk_size)
             if not data:
                 break
@@ -276,7 +322,7 @@ def get_events_from_server(server_socket):
 # add to here
 
 
-def connect(queue):
+def sync(queue):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
     print("Connected to: " + server_ip)
@@ -303,7 +349,7 @@ def connect(queue):
     print("disconected")
 
 
-def monitor_and_connect(id_number):
+def monitor_and_connect():
     queue = []
     observer = Watcher()
     observer.run(queue)
@@ -339,12 +385,12 @@ if __name__ == '__main__':
         # run client
         if len(sys.argv) == 5:
             client_id = sign_to_server()
-            monitor_and_connect(client_id)
+            monitor_and_connect()
 
         if len(sys.argv) == 6:
             client_id = sys.argv[CONST.ARG_FIVE()]
             os.makedirs(folder_path, exist_ok=True)
-            monitor_and_connect(client_id)
+            monitor_and_connect()
 
     except ValueError:
         print("Error - Wrong Arguments!")

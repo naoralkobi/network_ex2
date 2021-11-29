@@ -130,13 +130,11 @@ def sign_to_server():
                 print(f'Sending {relative_path}')
                 server_socket.sendall(b'create\n')
                 send_and_create_file(server_socket, file_name)
-                global last_update
-                last_update = time.time()
             for dir in dirs:
                 folder_name = os.path.join(path, dir)
                 server_socket.sendall(b'createFolder\n')
                 send_and_create_folder(server_socket, folder_name)
-
+    global last_update
     last_update = time.time()
     return client_id
 

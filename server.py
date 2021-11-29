@@ -190,10 +190,10 @@ def existing_client(client_socket, client_id):
 
 # add from here
 def send_and_create_file(client_socket, file, client_id):
-    relative_path = os.path.join(os.path.join(os.path.abspath(os.curdir), client_id), file)
-    with open(relative_path, "rb") as current_file:
-        file_size = os.path.getsize(relative_path)
-        client_socket.sendall(relative_path.encode() + b'\n')
+    current_file_path = os.path.join(os.path.join(os.path.abspath(os.curdir), client_id), file)
+    with open(current_file_path, "rb") as current_file:
+        file_size = os.path.getsize(current_file_path)
+        client_socket.sendall(file.encode() + b'\n')
 
         # send file size
         client_socket.sendall(str(file_size).encode() + b'\n')

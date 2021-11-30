@@ -5,7 +5,7 @@ import random
 import time
 import os
 
-clients_queues = {}
+clients_events = {}
 
 
 class Event:
@@ -47,7 +47,7 @@ def new_client(client_socket):
 
     # create folder with the name : id
     os.mkdir(client_id)
-    clients_queues[client_id] = []
+    clients_events[client_id] = []
     with client_socket, client_socket.makefile('rb') as client_file:
         while True:
 
@@ -92,7 +92,7 @@ def create_file(client_source, client_id, file_name, length, event_time):
         else:  # only runs if while doesn't break and length==0
             print('Complete')
             create_event = Event(file_name, event_time, "create")
-            clients_queues[client_id].append(create_event)
+            clients_events[client_id].append(create_event)
 
 
 def delete_file(client_source, client_id):
@@ -111,11 +111,19 @@ def delete_file(client_source, client_id):
         delete_folder(to_be_deleted, client_id)
     else:
         os.remove(to_be_deleted)
-    for event in clients_queues[client_id]:
+
+    # delete the creation event from the events log
+    for event in clients_events[client_id]:
+
+        # in case current event is creation of the deleted file
         if event.get_file == path and event.get_action != "delete":
-            clients_queues[client_id].remove(event.get_file)
+            clients_events[client_id].remove(event.get_file)
+
+    # create delete event
     delete_event = Event(path, event_time, "delete")
-    clients_queues[client_id].append(delete_event)
+
+    # add event to current client's events
+    clients_events[client_id].append(delete_event)
 
 
 def delete_folder(folder_path, client_id):
@@ -126,19 +134,19 @@ def delete_folder(folder_path, client_id):
             if not os.path.isdir(current):
                 os.remove(current)
                 delete_event = Event(current, time.time(), "delete")
-                clients_queues[client_id].append(delete_event)
+                clients_events[client_id].append(delete_event)
                 continue
             delete_folder(current, client_id)
     os.rmdir(folder_path)
     delete_event = Event(folder_path, time.time(), "delete")
-    clients_queues[client_id].append(delete_event)
+    clients_events[client_id].append(delete_event)
 
 
 def create_folder(client_id, folder_name, event_time):
     path = os.path.join(client_id, folder_name)
     os.makedirs(path, exist_ok=True)
     create_event = Event(folder_name, event_time, "createFolder")
-    clients_queues[client_id].append(create_event)
+    clients_events[client_id].append(create_event)
 
 
 def check_for_new_events(client_socket, client_id):
@@ -170,7 +178,7 @@ def existing_client(client_socket, client_id, client_last_update_time):
     with client_socket.makefile('rb') as client_file:
         print("2. time got:" + str(client_last_update_time))
 
-        for event in clients_queues[client_id]:
+        for event in clients_events[client_id]:
             # in case event in queue happened after last event in client, send it to client
             if isinstance(event, Event) and client_last_update_time < event.get_time():
                 print("current event time:" + str(event.get_time()))

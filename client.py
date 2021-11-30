@@ -125,6 +125,7 @@ class Handler(FileSystemEventHandler):
         print("Watchdog received delete event - % s." % event.src_path)
 
 
+# program constants
 class CONST:
     @staticmethod
     def ARG_ONE():
@@ -158,47 +159,79 @@ class CONST:
     def CHUNK_SIZE():
         return 1024
 
+    @staticmethod
+    def DOTS_NUM():
+        return 4
 
+    @staticmethod
+    def IP_MAX_RANGE():
+        return 255
+
+    @staticmethod
+    def IP_MIN_RANGE():
+        return 0
+
+
+# sign new client to server, send all files in folder to it and return client id that the server sent
 def sign_to_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
     with server_socket, server_socket.makefile('rb') as server_file:
-        # send an empty message to get id
+
+        # send request to get id
         server_socket.sendall(b'\n')
         client_id = server_file.readline().decode().strip()
         print("Server sent id: ", client_id)
 
         global last_update
-        # send every file to the server
+        # send every file in the folder to server
         for path, dirs, files in os.walk(folder_path):
             for file in files:
+
+                # last update time is current time
                 last_update = time.time()
                 file_name = os.path.join(path, file)
                 relative_path = os.path.relpath(file_name, folder_path)
                 print(f'Sending {relative_path}')
+
+                # send create new file command
                 server_socket.sendall(b'create\n')
+
+                # send file to server
                 send_and_create_file(server_socket, file_name, str(last_update))
             for dir in dirs:
+
+                # last update time is current time
                 last_update = time.time()
                 folder_name = os.path.join(path, dir)
+
+                # send create new folder command
                 server_socket.sendall(b'createFolder\n')
+
+                # send new folder to server
                 send_and_create_folder(server_socket, folder_name, str(last_update))
+
+    # return the new client id
     return client_id
 
 
+# send file and time of creation to the server
 def send_and_create_file(server_socket, file, event_time):
     with open(file, "rb") as current_file:
 
         relative_path = os.path.relpath(file, folder_path)
         file_size = os.path.getsize(file)
+
+        # send path to create file
         server_socket.sendall(relative_path.encode() + b'\n')
 
         # send file size
         server_socket.sendall(str(file_size).encode() + b'\n')
 
+        # send creation event time
         server_socket.sendall(event_time.encode() + b'\n')
 
-        # Send the file in chunks so large files can be handled.
+        # send the file in chunks
         data = current_file.read(CONST.CHUNK_SIZE())
         while data:
             server_socket.sendall(data)
@@ -206,40 +239,50 @@ def send_and_create_file(server_socket, file, event_time):
     print('Done.')
 
 
+# send folder and time of creation to the server
 def send_and_create_folder(server_socket, folder, event_time):
     relative_path = os.path.relpath(folder, folder_path)
+
+    # send path to be created at
     server_socket.sendall(relative_path.encode() + b'\n')
+
+    # send creation time event
     server_socket.sendall(event_time.encode() + b'\n')
 
 
+# send new event to the server and it's info
 def send_event_to_server(server_socket, event):
     print("action: " + event.get_action())
+    # send the event action
     server_socket.sendall(event.get_action().encode() + b'\n')
 
+    # in case of file creation, send it's event
     if event.get_action() == 'create':
         print("sending file: " + event.get_file())
         send_and_create_file(server_socket, event.get_file(), str(time.time()))
 
+    # in case of folder creation, send it's event
     if event.get_action() == 'createFolder':
         send_and_create_folder(server_socket, event.get_file(), str(time.time()))
 
+    # in case of file or folder deletion, send it's event
     if event.get_action() == 'delete':
         print("need to to do something in delete")
         file_name = os.path.relpath(event.get_file(), folder_path)
         print("relative path is: " + file_name)
         server_socket.sendall(file_name.encode("utf-8") + b'\n')
-        global last_update
-        last_update = time.time()
+
+        # send path to be deleted
         server_socket.sendall(str(last_update).encode() + b'\n')
 
 
-# add from here
+# create folder with the received name in the client folder
 def create_folder(folder_name):
     path = os.path.join(folder_path, folder_name)
     os.makedirs(path, exist_ok=True)
-    print()
 
 
+# receive and create file in the client folder
 def create_file(server_source, file_name, length):
     print(f'Downloading {file_name}...\n  Expecting {length:,} bytes...', end='', flush=True)
 
@@ -258,98 +301,137 @@ def create_file(server_source, file_name, length):
                 break
             current_file.write(data)
             length -= len(data)
-        else:  # only runs if while doesn't break and length==0
-            print('Complete')
 
 
+# delete received folder and it's content
 def delete_folder(folder):
+
+    # in case it's not empty, delete all content
     if os.listdir(folder):
         dir_list = os.listdir(folder)
         for file in reversed(dir_list):
             current = os.path.join(folder, file)
+
+            # in case current is file, remove it
             if not os.path.isdir(current):
                 os.remove(current)
                 continue
+            # else, delete current folder
             delete_folder(current)
+    # delete the folder
     os.rmdir(folder)
 
 
+# delete file in received path
 def delete_file(path):
     print("recived path in delete_file: ")
     print(path)
     to_be_deleted = os.path.join(folder_path, path)
     print("deleteing: ")
     print(to_be_deleted)
-    # in case folder is empty
+    # in case it doesnt exist, exit
     if not os.path.exists(to_be_deleted):
         return
+
+    # in case path is a folder, delete it
     if os.path.isdir(to_be_deleted):
         delete_folder(to_be_deleted)
+
+    # else, delete the file
     else:
         os.remove(to_be_deleted)
 
 
+# check if server has new events to send to client
 def get_events_from_server(server_socket):
     with server_socket.makefile('rb') as server_file:
+
+        # current event action
         action = server_file.readline().strip().decode()
         print("3. received action: " + action)
+
+        # get all new events and implement them in the client folder
         while action != '':
+
+            # file path
             path = server_file.readline().strip().decode()
             print("path: " + path)
+
+            # if empty path, it's a file that already been deleted
             if path == '':
+
+                # get next action and continue in the loop
                 action = server_file.readline().strip().decode()
                 print("3. received action: " + action)
                 continue
             print("4. received path: " + path)
             path = os.path.join(folder_path, path)
             print("local path: " + path)
+
+            # in case of new folder event, create it
             if action == "createFolder":
                 create_folder(path)
 
+            # in case of new file event, create it
             if action == "create":
                 length = int(server_file.readline())
                 create_file(server_file, path, length)
 
+            # in case delete event, delete the file
             if action == "delete":
                 delete_file(path)
             print("before getting action")
+
+            # get next event action
             action = server_file.readline().strip().decode()
             print("action: ")
             print(action)
     global last_update
+
+    # update the last update from server time
     last_update = time.time()
     print("no new events from client")
-# add to here
 
 
+# sync with the server - send new event and receive new events
 def sync(queue):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
     print("Connected to: " + server_ip)
     with server_socket:
         global add_to_queue
+
+        # when server send events, we wont add these events to the queue of events
         add_to_queue = False
         global last_update
-        # send id to server
         print("1. id sent: " + client_id)
+        # send id to server
         server_socket.sendall(client_id.encode("utf-8") + b'\n')
         print("2. time sent: " + str(last_update))
+        # send last update time to server
         server_socket.send(str(last_update).encode("utf-8") + b'\n')
+        # get from server events that happened after last update time
         get_events_from_server(server_socket)
+
+        # keep adding new events to queue
         add_to_queue = True
 
-        # update server with client events
+        # send to server new client events
         while len(queue):
             for event in queue:
                 print("deal with event")
+                # send current event
                 send_event_to_server(server_socket, event)
+
+                # remove current event from queue
                 queue.remove(event)
         # in case clients has no new event
         server_socket.sendall(b'\n')
     print("disconected")
 
 
-def monitor_and_connect():
+# watch the client folder and, add new events to queue and sync with server
+def monitor_and_sync():
     queue = []
     observer = Watcher()
     observer.run(queue)
@@ -360,11 +442,11 @@ def check_ip(ip_address):
     ip = ip_address.split(".")
 
     # in case the address doesnt has 4 ".", it is invalid
-    if len(ip) != 4:
+    if len(ip) != CONST.DOTS_NUM():
         return False
     # in case one of the segments in the address isn't in the wanted range, it is invalid
     for num in ip:
-        if int(num) > 255 or int(num) < 0:
+        if int(num) > CONST.IP_MAX_RANGE() or int(num) < CONST.IP_MIN_RANGE():
             return False
     return True
 
@@ -382,15 +464,16 @@ if __name__ == '__main__':
                 or not check_ip(server_ip):
             raise ValueError
 
-        # run client
+        # in case of new client
         if len(sys.argv) == 5:
             client_id = sign_to_server()
-            monitor_and_connect()
+            monitor_and_sync()
 
+        # in case of existing client - sync with server
         if len(sys.argv) == 6:
             client_id = sys.argv[CONST.ARG_FIVE()]
             os.makedirs(folder_path, exist_ok=True)
-            monitor_and_connect()
+            monitor_and_sync()
 
     except ValueError:
         print("Error - Wrong Arguments!")

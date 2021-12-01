@@ -5,21 +5,28 @@ import random
 import time
 import os
 
+# list of all events that server made.
 clients_events = {}
 
 
+# holds information about the events in the folder - file, time and action
 class Event:
+
+    # constructor
     def __init__(self, f, t, a):
         self.file = f
         self.time = t
         self.action = a
 
+    # getter for file
     def get_file(self):
         return self.file
 
+    # getter for time
     def get_time(self):
         return self.time
 
+    # getter for action
     def get_action(self):
         return self.action
 
@@ -38,6 +45,7 @@ class CONST:
         return 65535
 
 
+# this method is for new client that connect to server.
 def new_client(client_socket):
     # create new random id for client
     client_id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
@@ -58,13 +66,16 @@ def new_client(client_socket):
             if not action:
                 break
 
+            # read line to save file name.
             current_line = client_file.readline().strip().decode()
             if action == "create":
                 filename = current_line
                 length = int(client_file.readline())
+                # save to time of this event occurred.
                 event_time = float(client_file.readline().strip().decode())
                 if create_file(client_file, client_id, filename, length, event_time):
                     break
+            # if this action is to create a folder.
             elif action == "createFolder":
                 folder_name = current_line
                 event_time = float(client_file.readline().strip().decode())
@@ -95,9 +106,12 @@ def create_file(client_source, client_id, file_name, length, event_time):
             clients_events[client_id].append(create_event)
 
 
+# this method handle with delete file from the server.
 def delete_file(client_source, client_id):
+    # get the path
     path = client_source.readline().strip().decode()
     print("delete in send event_to_client: ")
+    # save time of this event
     event_time = float(client_source.readline().strip().decode())
     root_dir = os.path.abspath(os.curdir)
     folder = os.path.join(root_dir, client_id)
@@ -126,9 +140,11 @@ def delete_file(client_source, client_id):
     clients_events[client_id].append(delete_event)
 
 
+# this methods handle with event of delete folder.
 def delete_folder(folder_path, client_id):
     dir_list = os.listdir(folder_path)
     if dir_list:
+        # delete each file in the folder
         for file in reversed(dir_list):
             current = os.path.join(folder_path, file)
             if not os.path.isdir(current):
@@ -136,12 +152,14 @@ def delete_folder(folder_path, client_id):
                 delete_event = Event(current, time.time(), "delete")
                 clients_events[client_id].append(delete_event)
                 continue
+            # delete the folder.
             delete_folder(current, client_id)
     os.rmdir(folder_path)
     delete_event = Event(folder_path, time.time(), "delete")
     clients_events[client_id].append(delete_event)
 
 
+# this method handle with event of create folder.
 def create_folder(client_id, folder_name, event_time):
     path = os.path.join(client_id, folder_name)
     os.makedirs(path, exist_ok=True)
@@ -149,9 +167,11 @@ def create_folder(client_id, folder_name, event_time):
     clients_events[client_id].append(create_event)
 
 
+# this method gets new events from client.
 def check_for_new_events(client_socket, client_id):
     with client_socket.makefile('rb') as client_file:
         data = client_file.readline().strip().decode()
+        # get operation.
         while data != '':
             if data == "createFolder":
                 folder_name = client_file.readline().strip().decode()
@@ -173,6 +193,7 @@ def check_for_new_events(client_socket, client_id):
     print("no new events from client")
 
 
+# this method is for existing client and check if there are updates to make.
 def existing_client(client_socket, client_id, client_last_update_time):
     print("1. client id got: " + client_id)
     with client_socket.makefile('rb') as client_file:
@@ -189,7 +210,7 @@ def existing_client(client_socket, client_id, client_last_update_time):
     check_for_new_events(client_socket, client_id)
 
 
-# add from here
+# this method send updates to client.
 def send_and_create_file(client_socket, file, client_id):
     current_file_path = os.path.join(os.path.join(os.path.abspath(os.curdir), client_id), file)
     try:
@@ -211,6 +232,7 @@ def send_and_create_file(client_socket, file, client_id):
     print('Done.')
 
 
+# this method send events to client.
 def send_event_to_client(event, client_socket, client_id):
     print("3. action sent: " + event.get_action())
     client_socket.sendall(event.get_action().encode() + b'\n')
@@ -221,9 +243,9 @@ def send_event_to_client(event, client_socket, client_id):
 
     else:
         client_socket.sendall(event.get_file().encode() + b'\n')
-# add to here
 
 
+# run server program when client is connect.
 def server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind(('', int(port_number)))
@@ -247,6 +269,7 @@ def server():
         print('Client disconnected')
 
 
+# run server program.
 if __name__ == '__main__':
     try:
         port_number = sys.argv[CONST.ARG_ONE()]

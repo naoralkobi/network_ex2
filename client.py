@@ -9,7 +9,10 @@ from watchdog.events import FileSystemEventHandler
 last_update = 0
 
 # flag to mark when add event to queue and when not
-add_to_queue = True
+# add_to_queue = True
+
+# list of updates from server
+clients_events =[]
 
 
 # holds information about the events in the folder - file, time and action
@@ -77,8 +80,15 @@ class Handler(FileSystemEventHandler):
         name = os.path.basename(event.src_path)
 
         # in case we dont want to save changes in queue or edited file, exit
-        if not add_to_queue or name[0:14] == ".goutputstream":
+        if name[0:14] == ".goutputstream":
             return
+
+        for current_event in clients_events:
+            print("check if already handle this event: ")
+            print(current_event.file)
+            if current_event.file == event.src_path:
+                print("do not add to list.")
+                return
 
         # if it is folder - add event of new folder
         if os.path.isdir(event.src_path):
@@ -94,9 +104,12 @@ class Handler(FileSystemEventHandler):
         # file name
         name = os.path.basename(event.src_path)
 
-        # in case we dont want to save changes in queue, exit
-        if not add_to_queue:
-            return
+        for current_event in clients_events:
+            print("check if already handle this event: ")
+            print(current_event.file)
+            if current_event.file == event.src_path:
+                print("do not add to list.")
+                return
 
         # in case of edited file, delete original and send edited one
         if name[0:14] == ".goutputstream":
@@ -118,9 +131,13 @@ class Handler(FileSystemEventHandler):
     # in case of deleted file or folder
     def on_deleted(self, event):
 
-        # in case we dont want to save changes in queue, exit
-        if not add_to_queue:
-            return
+        for current_event in clients_events:
+            print("check if already handle this event: ")
+            print(current_event.file)
+            if current_event.file == event.src_path:
+                print("do not add to list.")
+                return
+
         self.queue.append(Event(event.src_path, time.time(), "delete"))
         print("Watchdog received delete event - % s." % event.src_path)
 
@@ -368,6 +385,9 @@ def get_events_from_server(server_socket):
             path = os.path.join(folder_path, path)
             print("local path: " + path)
 
+            create_event = Event(path, time.time(), action)
+            clients_events.append(create_event)
+
             # in case of new folder event, create it
             if action == "createFolder":
                 create_folder(path)
@@ -399,11 +419,12 @@ def sync(queue):
     server_socket.connect((server_ip, int(server_port)))
     print("Connected to: " + server_ip)
     with server_socket:
-        global add_to_queue
+        #global add_to_queue
 
         # when server send events, we wont add these events to the queue of events
-        add_to_queue = False
+        #add_to_queue = False
         global last_update
+        global clients_events
         print("1. id sent: " + client_id)
         # send id to server
         server_socket.sendall(client_id.encode("utf-8") + b'\n')
@@ -414,7 +435,8 @@ def sync(queue):
         get_events_from_server(server_socket)
 
         # keep adding new events to queue
-        add_to_queue = True
+        #add_to_queue = True
+        clients_events.clear()
 
         # send to server new client events
         while len(queue):

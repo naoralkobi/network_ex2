@@ -8,9 +8,6 @@ from watchdog.events import FileSystemEventHandler
 # time of last update got from server
 last_update = 0
 
-# flag to mark when add event to queue and when not
-# add_to_queue = True
-
 # list of updates from server
 clients_events =[]
 
@@ -83,12 +80,9 @@ class Handler(FileSystemEventHandler):
         if name[0:14] == ".goutputstream":
             return
 
-        for current_event in clients_events:
-            print("check if already handle this event: ")
-            print(current_event.file)
-            if current_event.file == event.src_path:
-                print("do not add to list.")
-                return
+        if is_sent_from_server(event):
+            print("pass this event: " + event.src_path)
+            return
 
         # if it is folder - add event of new folder
         if os.path.isdir(event.src_path):
@@ -104,12 +98,9 @@ class Handler(FileSystemEventHandler):
         # file name
         name = os.path.basename(event.src_path)
 
-        for current_event in clients_events:
-            print("check if already handle this event: ")
-            print(current_event.file)
-            if current_event.file == event.src_path:
-                print("do not add to list.")
-                return
+        if is_sent_from_server(event):
+            print("pass this event: " + event.src_path)
+            return
 
         # in case of edited file, delete original and send edited one
         if name[0:14] == ".goutputstream":
@@ -131,15 +122,23 @@ class Handler(FileSystemEventHandler):
     # in case of deleted file or folder
     def on_deleted(self, event):
 
-        for current_event in clients_events:
-            print("check if already handle this event: ")
-            print(current_event.file)
-            if current_event.file == event.src_path:
-                print("do not add to list.")
-                return
+        if is_sent_from_server(event):
+            print("pass this event: " + event.src_path)
+            return
 
         self.queue.append(Event(event.src_path, time.time(), "delete"))
         print("Watchdog received delete event - % s." % event.src_path)
+
+
+# return true if the event is already know because it is sent from server
+def is_sent_from_server(event):
+    for current_event in clients_events:
+        print("check if already handle this event: ")
+        print(current_event.file)
+        if current_event.file == event.src_path:
+            print("do not add to list.")
+            return True
+    return False
 
 
 # program constants

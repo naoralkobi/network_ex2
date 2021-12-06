@@ -186,11 +186,33 @@ def check_for_new_events(client_socket, client_id):
 
             if data == "delete":
                 delete_file(client_file, client_id)
-            print("before getting data")
+
+            if data == "move":
+                src_path = client_file.readline().strip().decode()
+                dst_path = client_file.readline().strip().decode()
+                event_time = float(client_file.readline().strip().decode())
+                move_file(client_file, client_id, dst_path, event_time, src_path)
+
             data = client_file.readline().strip().decode()
-            print("data: ")
-            print(data)
     print("no new events from client")
+
+
+def move_file(client_file, client_id, dst_path, event_time, src_path):
+    print("moving file")
+
+    # new file path
+    dest = os.path.join(client_id, dst_path)
+
+    # new file path
+    src = os.path.join(client_id, src_path)
+
+    print(src)
+    print(dest)
+
+    root_dir = os.path.abspath(os.curdir)
+    new_path = os.path.join(root_dir, dest)
+    print(new_path)
+    os.replace(os.path.join(root_dir, src), os.path.join(root_dir, dest))
 
 
 # this method is for existing client and check if there are updates to make.

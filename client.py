@@ -9,21 +9,26 @@ from watchdog.events import FileSystemEventHandler
 last_update = 0
 
 # list of updates from server
-clients_events =[]
+clients_events = []
 
 
 # holds information about the events in the folder - file, time and action
 class Event:
 
     # constructor
-    def __init__(self, file, time, action):
-        self.file = file
+    def __init__(self, new_path, time, action, old_path):
+        self.new_path = new_path
         self.time = time
         self.action = action
+        self.old_path = old_path
 
-    # getter for file
-    def get_file(self):
-        return self.file
+    # getter for old path
+    def get_old_path(self):
+        return self.old_path
+
+    # getter for new_path
+    def get_new_path(self):
+        return self.new_path
 
     # getter for time
     def get_time(self):
@@ -86,9 +91,9 @@ class Handler(FileSystemEventHandler):
 
         # if it is folder - add event of new folder
         if os.path.isdir(event.src_path):
-            self.queue.append(Event(event.src_path, time.time(), "createFolder"))
+            self.queue.append(Event(event.src_path, time.time(), "createFolder", event.dest_path))
         else:
-            self.queue.append(Event(event.src_path, time.time(), "create"))
+            self.queue.append(Event(event.src_path, time.time(), "create", event.dest_path))
         print("Watchdog received created event - % s." % event.src_path)
         # Event is created, you can process it now
 
@@ -104,18 +109,19 @@ class Handler(FileSystemEventHandler):
 
         # in case of edited file, delete original and send edited one
         if name[0:14] == ".goutputstream":
-            self.queue.append(Event(event.dest_path, time.time(), "delete"))
-            self.queue.append(Event(event.dest_path, time.time(), "create"))
+            self.queue.append(Event(event.dest_path, time.time(), "delete", event.dest_path))
+            self.queue.append(Event(event.dest_path, time.time(), "create", event.dest_path))
             return
 
-        # delete file
-        self.queue.append(Event(event.src_path, time.time(), "delete"))
+        # in case of the new path is not in client folder.
+        if not event.dest_path.startswith(folder_path):
+            self.queue.append(Event(event.src_path, time.time(), "delete", event.dest_path))
 
         # in case of moving folder, create event of new folder
-        if event.dest_path.startswith(folder_path) and os.path.isdir(event.dest_path):
-            self.queue.append(Event(event.dest_path, time.time(), "createFolder"))
+        if os.path.isdir(event.dest_path):
+            self.queue.append(Event(event.dest_path, time.time(), "moveFolder", event.src_path))
         else:
-            self.queue.append(Event(event.dest_path, time.time(), "create"))
+            self.queue.append(Event(event.dest_path, time.time(), "move", event.src_path))
         print("Watchdog received moved event - % s." % event.src_path)
         print("event move to - % s." % event.dest_path)
 
@@ -126,7 +132,7 @@ class Handler(FileSystemEventHandler):
             print("pass this event: " + event.src_path)
             return
 
-        self.queue.append(Event(event.src_path, time.time(), "delete"))
+        self.queue.append(Event(event.src_path, time.time(), "delete", event.dest_path))
         print("Watchdog received delete event - % s." % event.src_path)
 
 
@@ -255,6 +261,25 @@ def send_and_create_file(server_socket, file, event_time):
     print('Done.')
 
 
+# send file and time of moving to the server
+def send_and_move_file(server_socket, dest, event_time, src):
+    print(dest)
+    print(src)
+    relative_dest = os.path.relpath(dest, folder_path)
+    relative_src = os.path.relpath(src, folder_path)
+
+    # send src path
+    server_socket.sendall(relative_src.encode() + b'\n')
+
+    # send path to move file
+    server_socket.sendall(relative_dest.encode() + b'\n')
+
+    # send creation event time
+    server_socket.sendall(event_time.encode() + b'\n')
+
+    print('Done.')
+
+
 # send folder and time of creation to the server
 def send_and_create_folder(server_socket, folder, event_time):
     relative_path = os.path.relpath(folder, folder_path)
@@ -274,17 +299,27 @@ def send_event_to_server(server_socket, event):
 
     # in case of file creation, send it's event
     if event.get_action() == 'create':
-        print("sending file: " + event.get_file())
-        send_and_create_file(server_socket, event.get_file(), str(time.time()))
+        print("sending file: " + event.get_new_path())
+        send_and_create_file(server_socket, event.get_new_path(), str(time.time()))
 
     # in case of folder creation, send it's event
     if event.get_action() == 'createFolder':
-        send_and_create_folder(server_socket, event.get_file(), str(time.time()))
+        send_and_create_folder(server_socket, event.get_new_path(), str(time.time()))
+
+    # in case of file creation, send it's event
+    if event.get_action() == 'move':
+        print("moving file: " + event.get_new_path())
+        send_and_move_file(server_socket, event.get_new_path(), str(time.time()), event.get_old_path())
+
+    # in case of folder creation, send it's event
+    if event.get_action() == 'moveFolder':
+        #TODO
+        print("need to deal with... ")
 
     # in case of file or folder deletion, send it's event
     if event.get_action() == 'delete':
         print("need to to do something in delete")
-        file_name = os.path.relpath(event.get_file(), folder_path)
+        file_name = os.path.relpath(event.get_new_path(), folder_path)
         print("relative path is: " + file_name)
         server_socket.sendall(file_name.encode("utf-8") + b'\n')
 

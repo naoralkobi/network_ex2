@@ -9,26 +9,21 @@ from watchdog.events import FileSystemEventHandler
 last_update = 0
 
 # list of updates from server
-clients_events = []
+clients_events =[]
 
 
 # holds information about the events in the folder - file, time and action
 class Event:
 
     # constructor
-    def __init__(self, new_path, time, action, old_path):
-        self.new_path = new_path
+    def __init__(self, file, time, action):
+        self.file = file
         self.time = time
         self.action = action
-        self.old_path = old_path
 
-    # getter for old path
-    def get_old_path(self):
-        return self.old_path
-
-    # getter for new_path
-    def get_new_path(self):
-        return self.new_path
+    # getter for file
+    def get_file(self):
+        return self.file
 
     # getter for time
     def get_time(self):
@@ -91,9 +86,9 @@ class Handler(FileSystemEventHandler):
 
         # if it is folder - add event of new folder
         if os.path.isdir(event.src_path):
-            self.queue.append(Event(event.src_path, time.time(), "createFolder", event.src_path))
+            self.queue.append(Event(event.src_path, time.time(), "createFolder"))
         else:
-            self.queue.append(Event(event.src_path, time.time(), "create", event.src_path))
+            self.queue.append(Event(event.src_path, time.time(), "create"))
         print("Watchdog received created event - % s." % event.src_path)
         # Event is created, you can process it now
 
@@ -109,22 +104,18 @@ class Handler(FileSystemEventHandler):
 
         # in case of edited file, delete original and send edited one
         if name[0:14] == ".goutputstream":
-            self.queue.append(Event(event.dest_path, time.time(), "delete", event.dest_path))
-            self.queue.append(Event(event.dest_path, time.time(), "create", event.dest_path))
+            self.queue.append(Event(event.dest_path, time.time(), "delete"))
+            self.queue.append(Event(event.dest_path, time.time(), "create"))
             return
 
-        # in case of the new path is not in client folder.
-        if not event.dest_path.startswith(folder_path):
-            self.queue.append(Event(event.src_path, time.time(), "delete", event.dest_path))
+        # delete file
+        self.queue.append(Event(event.src_path, time.time(), "delete"))
 
         # in case of moving folder, create event of new folder
-        if event.is_directory:
-            print(event.src_path)
-            print(event.dest_path)
-            self.queue.append(Event(event.src_path, time.time(), "moveFolder", event.dest_path))
-            self.queue.append(Event(event.src_path, time.time(), "delete", event.dest_path))
+        if event.dest_path.startswith(folder_path) and os.path.isdir(event.dest_path):
+            self.queue.append(Event(event.dest_path, time.time(), "createFolder"))
         else:
-            self.queue.append(Event(event.dest_path, time.time(), "move", event.src_path))
+            self.queue.append(Event(event.dest_path, time.time(), "create"))
         print("Watchdog received moved event - % s." % event.src_path)
         print("event move to - % s." % event.dest_path)
 
@@ -135,7 +126,7 @@ class Handler(FileSystemEventHandler):
             print("pass this event: " + event.src_path)
             return
 
-        self.queue.append(Event(event.src_path, time.time(), "delete", event.src_path))
+        self.queue.append(Event(event.src_path, time.time(), "delete"))
         print("Watchdog received delete event - % s." % event.src_path)
 
 
@@ -143,8 +134,8 @@ class Handler(FileSystemEventHandler):
 def is_sent_from_server(event):
     for current_event in clients_events:
         print("check if already handle this event: ")
-        print(current_event.get_new_path())
-        if current_event.get_new_path() == event.src_path:
+        print(current_event.file)
+        if current_event.file == event.src_path:
             print("do not add to list.")
             return True
     return False
@@ -217,6 +208,7 @@ def sign_to_server():
                 last_update = time.time()
                 file_name = os.path.join(path, file)
                 relative_path = os.path.relpath(file_name, folder_path)
+                print(f'Sending {relative_path}')
 
                 # send create new file command
                 server_socket.sendall(b'create\n')
@@ -260,23 +252,7 @@ def send_and_create_file(server_socket, file, event_time):
         while data:
             server_socket.sendall(data)
             data = current_file.read(CONST.CHUNK_SIZE())
-
-
-# send file and time of moving to the server
-def send_and_move_file(server_socket, dest, event_time, src):
-    print(dest)
-    print(src)
-    relative_dest = os.path.relpath(dest, folder_path)
-    relative_src = os.path.relpath(src, folder_path)
-
-    # send src path
-    server_socket.sendall(relative_src.encode() + b'\n')
-
-    # send path to move file
-    server_socket.sendall(relative_dest.encode() + b'\n')
-
-    # send creation event time
-    server_socket.sendall(event_time.encode() + b'\n')
+    print('Done.')
 
 
 # send folder and time of creation to the server
@@ -288,6 +264,32 @@ def send_and_create_folder(server_socket, folder, event_time):
 
     # send creation time event
     server_socket.sendall(event_time.encode() + b'\n')
+
+
+# send new event to the server and it's info
+def send_event_to_server(server_socket, event):
+    print("action: " + event.get_action())
+    # send the event action
+    server_socket.sendall(event.get_action().encode() + b'\n')
+
+    # in case of file creation, send it's event
+    if event.get_action() == 'create':
+        print("sending file: " + event.get_file())
+        send_and_create_file(server_socket, event.get_file(), str(event.get_time()))
+
+    # in case of folder creation, send it's event
+    if event.get_action() == 'createFolder':
+        send_and_create_folder(server_socket, event.get_file(), str(event.get_time()))
+
+    # in case of file or folder deletion, send it's event
+    if event.get_action() == 'delete':
+        print("need to to do something in delete")
+        file_name = os.path.relpath(event.get_file(), folder_path)
+        print("relative path is: " + file_name)
+        server_socket.sendall(file_name.encode("utf-8") + b'\n')
+
+        # send path to be deleted
+        server_socket.sendall(str(last_update).encode() + b'\n')
 
 
 # create folder with the received name in the client folder
@@ -356,55 +358,6 @@ def delete_file(path):
         os.remove(to_be_deleted)
 
 
-def move_file(dst_path, src_path):
-    print("in move_file")
-    print("original dst: " + dst_path)
-    print("original src: " + src_path)
-
-    # new file path
-    dest = os.path.join(folder_path, dst_path)
-
-    # new file path
-    src = os.path.join(folder_path, src_path)
-
-    print(src)
-    print(dest)
-
-    if os.path.isdir(src):
-        print("moving folder..")
-        move_folder(dst_path, src_path)
-    else:
-        os.replace(src, dest)
-        print("after moving...")
-
-
-def move_folder(dst_path, src_path):
-    print("in move_folder")
-    print("original dst: " + dst_path)
-    print("original src: " + src_path)
-    try:
-        dest = os.path.join(folder_path, dst_path)
-
-        # new file path
-        src = os.path.join(folder_path, src_path)
-
-        print(src)
-        print(dest)
-
-        dir_list = os.listdir(src)
-        if dir_list:
-            # delete each file in the folder
-            for file in reversed(dir_list):
-                current = os.path.join(src, file)
-                if not os.path.isdir(current):
-                    move_file(dest, file)
-                    continue
-                move_folder(dest, file)
-
-    except:
-        print("error!!")
-
-
 # check if server has new events to send to client
 def get_events_from_server(server_socket):
     with server_socket.makefile('rb') as server_file:
@@ -417,25 +370,21 @@ def get_events_from_server(server_socket):
         while action != '':
 
             # file path
-            new = server_file.readline().strip().decode()
-            print("path: " + new)
-            old = server_file.readline().strip().decode()
+            path = server_file.readline().strip().decode()
+            print("path: " + path)
 
             # if empty path, it's a file that already been deleted
-            if new == '':
+            if path == '':
 
                 # get next action and continue in the loop
                 action = server_file.readline().strip().decode()
                 print("3. received action: " + action)
                 continue
-            print("4. received path: " + new)
-            path = os.path.join(folder_path, new)
-            #print("local path: " + path)
-            #old = os.path.join(folder_path, old)
-            print("local path: " + old)
+            print("4. received path: " + path)
+            path = os.path.join(folder_path, path)
+            print("local path: " + path)
 
-
-            create_event = Event(path, time.time(), action, old)
+            create_event = Event(path, time.time(), action)
             clients_events.append(create_event)
 
             # in case of new folder event, create it
@@ -450,15 +399,6 @@ def get_events_from_server(server_socket):
             # in case delete event, delete the file
             if action == "delete":
                 delete_file(path)
-
-            if action == "move":
-                print("stage 1")
-                move_file(new, old)
-
-            if action == "moveFolder":
-                print("stage 2")
-                move_folder(new, old)
-
             print("before getting action")
 
             # get next event action
@@ -472,59 +412,29 @@ def get_events_from_server(server_socket):
     print("no new events from client")
 
 
-# send new event to the server and it's info
-def send_event_to_server(server_socket, event):
-    print("sending action: " + event.get_action())
-    # send the event action
-    server_socket.sendall(event.get_action().encode() + b'\n')
-
-    # in case of file creation, send it's event
-    if event.get_action() == 'create':
-        print("sending file: " + event.get_new_path())
-        send_and_create_file(server_socket, event.get_new_path(), str(event.get_time()))
-
-    # in case of folder creation, send it's event
-    if event.get_action() == 'createFolder':
-        send_and_create_folder(server_socket, event.get_new_path(), str(event.get_time()))
-
-    # in case of file creation, send it's event
-    if event.get_action() == 'move':
-        send_and_move_file(server_socket, event.get_new_path(), str(event.get_time()), event.get_old_path())
-
-    # in case of folder creation, send it's event
-    if event.get_action() == 'moveFolder':
-        send_and_move_file(server_socket, event.get_new_path(), str(event.get_time()), event.get_old_path())
-
-    # in case of file or folder deletion, send it's event
-    if event.get_action() == 'delete':
-        file_name = os.path.relpath(event.get_new_path(), folder_path)
-        print("need to delete: " + file_name)
-        server_socket.sendall(file_name.encode("utf-8") + b'\n')
-
-        # send path to be deleted
-        server_socket.sendall(str(last_update).encode() + b'\n')
-
-
 # sync with the server - send new event and receive new events
 def sync(queue):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.connect((server_ip, int(server_port)))
+    print("Connected to: " + server_ip)
     with server_socket:
+        #global add_to_queue
 
         # when server send events, we wont add these events to the queue of events
+        #add_to_queue = False
         global last_update
         global clients_events
-
+        print("1. id sent: " + client_id)
         # send id to server
         server_socket.sendall(client_id.encode("utf-8") + b'\n')
-
+        print("2. time sent: " + str(last_update))
         # send last update time to server
         server_socket.send(str(last_update).encode("utf-8") + b'\n')
-
         # get from server events that happened after last update time
         get_events_from_server(server_socket)
 
         # keep adding new events to queue
+        #add_to_queue = True
         clients_events.clear()
 
         # send to server new client events

@@ -44,11 +44,17 @@ class CONST:
     def ENDING_PORT():
         return 65535
 
+    @staticmethod
+    def CHUNK_SIZE():
+        return 5000
+
 
 # this method is for new client that connect to server.
 def new_client(client_socket):
     # create new random id for client
     client_id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
+
+    print(client_id)
 
     # send id to client
     client_socket.sendall(client_id.encode("utf-8") + b'\n')
@@ -82,8 +88,8 @@ def new_client(client_socket):
                 create_folder(client_id, folder_name, event_time)
 
 
+# this method create files in server folder.
 def create_file(client_source, client_id, file_name, length, event_time):
-    print(f'Downloading {file_name}...\n  Expecting {length:,} bytes...', end='', flush=True)
 
     # new file path
     path = os.path.join(client_id, file_name)
@@ -94,14 +100,13 @@ def create_file(client_source, client_id, file_name, length, event_time):
     # read current file's data
     with open(path, 'wb') as current_file:
         while length:
-            current_chunk_size = min(length, 1024)
+            current_chunk_size = min(length, CONST.CHUNK_SIZE())
             data = client_source.read(current_chunk_size)
             if not data:
                 break
             current_file.write(data)
             length -= len(data)
         else:  # only runs if while doesn't break and length==0
-            print('Complete')
             create_event = Event(file_name, event_time, "create")
             clients_events[client_id].append(create_event)
 
@@ -110,14 +115,11 @@ def create_file(client_source, client_id, file_name, length, event_time):
 def delete_file(client_source, client_id):
     # get the path
     path = client_source.readline().strip().decode()
-    print("delete in send event_to_client: ")
     # save time of this event
     event_time = float(client_source.readline().strip().decode())
     root_dir = os.path.abspath(os.curdir)
     folder = os.path.join(root_dir, client_id)
     to_be_deleted = os.path.join(folder, path)
-    print(path)
-    print(to_be_deleted)
     # in case folder is empty
     if not os.path.exists(to_be_deleted):
         return
@@ -186,23 +188,16 @@ def check_for_new_events(client_socket, client_id):
 
             if data == "delete":
                 delete_file(client_file, client_id)
-            print("before getting data")
             data = client_file.readline().strip().decode()
-            print("data: ")
-            print(data)
-    print("no new events from client")
 
 
 # this method is for existing client and check if there are updates to make.
 def existing_client(client_socket, client_id, client_last_update_time):
-    print("1. client id got: " + client_id)
     with client_socket.makefile('rb') as client_file:
-        print("2. time got:" + str(client_last_update_time))
 
         for event in clients_events[client_id]:
             # in case event in queue happened after last event in client, send it to client
             if isinstance(event, Event) and client_last_update_time < event.get_time():
-                print("current event time:" + str(event.get_time()))
                 send_event_to_client(event, client_socket, client_id)
 
         client_socket.sendall(b'\n')
@@ -213,6 +208,7 @@ def existing_client(client_socket, client_id, client_last_update_time):
 # this method send updates to client.
 def send_and_create_file(client_socket, file, client_id):
     current_file_path = os.path.join(os.path.join(os.path.abspath(os.curdir), client_id), file)
+    load_file(current_file_path)
     try:
         with open(current_file_path, "rb") as current_file:
             file_size = os.path.getsize(current_file_path)
@@ -223,21 +219,35 @@ def send_and_create_file(client_socket, file, client_id):
             client_socket.sendall(str(file_size).encode() + b'\n')
 
             # Send the file in chunks so large files can be handled.
-            data = current_file.read(1024)
+            data = current_file.read(CONST.CHUNK_SIZE())
             while data:
                 client_socket.sendall(data)
-                data = current_file.read(1024)
+                data = current_file.read(CONST.CHUNK_SIZE())
     except IOError:
         client_socket.sendall(b'\n')
-    print('Done.')
+
+
+# make sure file isn't being writing on
+def load_file(file):
+    with open(file, "rb") as current_file:
+
+        # as long as the file size doesn't match it's size before, keep looping
+        while True:
+            try:
+                first_file_size = os.path.getsize(file)
+                time.sleep(1.2)
+                second_file_size = os.path.getsize(file)
+                if first_file_size == second_file_size:
+                    return
+            except IOError:
+                continue
 
 
 # this method send events to client.
 def send_event_to_client(event, client_socket, client_id):
-    print("3. action sent: " + event.get_action())
     client_socket.sendall(event.get_action().encode() + b'\n')
-    print("4. path sent: " + event.get_file())
 
+    # send and create the new file in client
     if event.get_action() == 'create':
         send_and_create_file(client_socket, event.get_file(), client_id)
 
@@ -252,7 +262,6 @@ def server():
     server_socket.listen(1)
     while True:
         client_socket, client_address = server_socket.accept()
-        print('Connection from: ', client_address)
         with client_socket, client_socket.makefile('rb') as client_file:
 
             # get empty byte or id number from client
@@ -266,7 +275,6 @@ def server():
             else:
                 client_last_update_time = float(client_file.readline().strip().decode())
                 existing_client(client_socket, data, client_last_update_time)
-        print('Client disconnected')
 
 
 # run server program.
@@ -280,5 +288,4 @@ if __name__ == '__main__':
         # run server
         server()
     except ValueError:
-        print("Error - Wrong Arguments!")
         sys.exit(1)

@@ -50,7 +50,7 @@ class CONST:
         return 65535
 
 
-# this method is for new client that connect to server.
+# this method create files in server when connecting.
 def new_client(client_socket):
     # create new random id for client
     client_id = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=128))
@@ -78,8 +78,8 @@ def new_client(client_socket):
                 length = int(client_file.readline())
                 # save to time of this event occurred.
                 event_time = float(client_file.readline().strip().decode())
-                if create_file(client_file, client_id, filename, length, event_time):
-                    break
+                create_file(client_file, client_id, filename, length, event_time)
+
             # if this action is to create a folder.
             elif action == "createFolder":
                 folder_name = current_line
@@ -87,9 +87,18 @@ def new_client(client_socket):
                 create_folder(client_id, folder_name, event_time)
 
 
-def create_file(client_source, client_id, file_name, length, event_time):
-    print(f'Downloading {file_name}...\n  Expecting {length:,} bytes...', end='', flush=True)
+# this method create folder in server when connecting.
+def create_folder(client_id, folder_name, event_time):
+    path = os.path.join(client_id, folder_name)
+    os.makedirs(path, exist_ok=True)
 
+    # add event to list of events in server.
+    create_event = Event(folder_name, event_time, "createFolder", "")
+    clients_events[client_id].append(create_event)
+
+
+# when connecting to server this method create files in server folder.
+def create_file(client_source, client_id, file_name, length, event_time):
     # new file path
     path = os.path.join(client_id, file_name)
 
@@ -106,23 +115,24 @@ def create_file(client_source, client_id, file_name, length, event_time):
             current_file.write(data)
             length -= len(data)
         else:  # only runs if while doesn't break and length==0
-            print('Complete')
+
+            # add event to list of events in server.
             create_event = Event(file_name, event_time, "create", "")
             clients_events[client_id].append(create_event)
 
 
 # this method handle with delete file from the server.
 def delete_file(client_source, client_id):
+
     # get the path
     path = client_source.readline().strip().decode()
-    print("delete in send event_to_client: ")
+
     # save time of this event
     event_time = float(client_source.readline().strip().decode())
+
     root_dir = os.path.abspath(os.curdir)
     folder = os.path.join(root_dir, client_id)
     to_be_deleted = os.path.join(folder, path)
-    print(path)
-    print(to_be_deleted)
     # in case folder is empty
     if not os.path.exists(to_be_deleted):
         return
@@ -131,12 +141,13 @@ def delete_file(client_source, client_id):
     else:
         os.remove(to_be_deleted)
 
-    # delete the creation event from the events log
-    for event in clients_events[client_id]:
-
-        # in case current event is creation of the deleted file
-        if event.get_file == path and event.get_action != "delete":
-            clients_events[client_id].remove(event.get_file)
+    # # delete the creation event from the events log
+    # for event in clients_events[client_id]:
+    #     # in case current event is creation of the moved file delete the event.
+    #     print(event.get_action())
+    #     print(event.get_file())
+    #     if event.get_file() == path and event.get_action() != " delete":
+    #         clients_events[client_id].remove(event)
 
     # create delete event
     delete_event = Event(path, event_time, "delete", "")
@@ -162,14 +173,6 @@ def delete_folder(folder_path, client_id):
     os.rmdir(folder_path)
     delete_event = Event(folder_path, time.time(), "delete", "")
     clients_events[client_id].append(delete_event)
-
-
-# this method handle with event of create folder.
-def create_folder(client_id, folder_name, event_time):
-    path = os.path.join(client_id, folder_name)
-    os.makedirs(path, exist_ok=True)
-    create_event = Event(folder_name, event_time, "createFolder", "")
-    clients_events[client_id].append(create_event)
 
 
 # this method gets new events from client.
@@ -220,26 +223,30 @@ def move_file(client_file, client_id, dst_path, event_time, src_path):
     # new file path
     src = os.path.join(client_id, src_path)
 
-    print(src)
-    print(dest)
-
     root_dir = os.path.abspath(os.curdir)
 
+    if not os.path.exists(os.path.join(root_dir, src)):
+        return
+    # check if file is a dir.
     if os.path.isdir(os.path.join(root_dir, src)):
-        print("moving folder..")
         move_folder(client_file, client_id, dst_path, event_time, src_path)
     else:
+        print(os.path.join(root_dir, src))
+        print(os.path.join(root_dir, dest))
+        # name = os.path.basename(src)
         os.replace(os.path.join(root_dir, src), os.path.join(root_dir, dest))
 
-    # delete the creation event from the events log
-    for event in clients_events[client_id]:
+    # # delete the creation event from the events log
+    # for event in clients_events[client_id]:
+    #     # in case current event is creation of the moved file delete the event.
+    #     print(event.get_action())
+    #     print(event.get_file())
+    #     print(src_path)
+    #     if event.get_file() == src_path and event.get_action() != "move":
+    #         clients_events[client_id].remove(event)
 
-        # in case current event is creation of the moved file
-        if event.get_file == src_path and event.get_action != "move":
-            clients_events[client_id].remove(event.get_file)
     # create move event
-
-    create_event = Event(os.path.join(root_dir, dest), event_time, "move", os.path.join(root_dir, src))
+    create_event = Event(dst_path, event_time, "move", src_path)
     # add event to current client's events
     clients_events[client_id].append(create_event)
 
@@ -248,27 +255,42 @@ def move_file(client_file, client_id, dst_path, event_time, src_path):
 def move_folder(client_file, client_id, dst_path, event_time, src_path):
     # new file path
     dest = os.path.join(client_id, dst_path)
-
+    print(dest)
     # new file path
     src = os.path.join(client_id, src_path)
-
-    print(src)
-    print(dest)
+    print(src) # need to move file here
 
     root_dir = os.path.abspath(os.curdir)
-
-    folder_path = os.path.join(root_dir, src)
-
+    print(root_dir)
+    folder_path = os.path.join(root_dir, dest)
+    print(folder_path)
     dir_list = os.listdir(folder_path)
     if dir_list:
-        # delete each file in the folder
+        # move each file in the folder
         for file in reversed(dir_list):
             current = os.path.join(folder_path, file)
-            if not os.path.isdir(current):
-                move_file(client_file, client_id, dst_path, event_time, file)
-                continue
-            # delete the folder.
-            move_folder(client_file, client_id, dst_path, event_time, file)
+            if os.path.isdir(current):
+                print(file)
+                print(dst_path)
+                print(os.path.join(dst_path, file))
+                create_folder(client_id, os.path.join(src_path, file), event_time)
+                move_folder(client_file, client_id, os.path.join(dst_path, file), event_time, os.path.join(src_path, file))
+            else:
+                print(file)
+                print(os.path.join(src, file))
+                print(os.path.join(root_dir, os.path.join(src, file)))
+
+                os.replace(current, os.path.join(root_dir, os.path.join(root_dir, os.path.join(src, file))))
+                # os.replace(src, current)
+                # create move event
+                create_event = Event(dst_path, event_time, "move", src_path)
+                # add event to current client's events
+                clients_events[client_id].append(create_event)
+
+    # create move event
+    create_event = Event(dst_path, event_time, "moveFolder", src_path)
+    # add event to current client's events
+    clients_events[client_id].append(create_event)
 
 
 # this method is for existing client and check if there are updates to make.
@@ -315,10 +337,9 @@ def send_and_create_file(client_socket, file, client_id):
 
 # this method send events to client.
 def send_event_to_client(event, client_socket, client_id):
-    print("3. action sent: " + event.get_action())
     client_socket.sendall(event.get_action().encode() + b'\n')
-    print("4. path sent: " + event.get_file())
-
+    print("sending action: " + event.get_action())
+    print("sending file: " + event.get_file())
     if event.get_action() == 'create':
         send_and_create_file(client_socket, event.get_file(), client_id)
     else:

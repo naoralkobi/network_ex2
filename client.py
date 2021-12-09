@@ -218,9 +218,6 @@ def sign_to_server():
 
 # send file and time of creation to the server
 def send_and_create_file(server_socket, file, event_time):
-
-    # make sure file is ready to be used
-    load_file(file)
     with open(file, "rb") as current_file:
 
         relative_path = os.path.relpath(file, folder_path)
@@ -241,21 +238,6 @@ def send_and_create_file(server_socket, file, event_time):
             server_socket.sendall(data)
             data = current_file.read(CONST.CHUNK_SIZE())
 
-
-# make sure file isn't being writing on
-def load_file(file):
-    with open(file, "rb") as current_file:
-
-        # as long as the file size doesn't match it's size before, keep looping
-        while True:
-            try:
-                first_file_size = os.path.getsize(file)
-                time.sleep(1.2)
-                second_file_size = os.path.getsize(file)
-                if first_file_size == second_file_size:
-                    return
-            except IOError:
-                continue
 
 
 # send folder and time of creation to the server

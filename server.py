@@ -208,7 +208,6 @@ def existing_client(client_socket, client_id, client_last_update_time):
 # this method send updates to client.
 def send_and_create_file(client_socket, file, client_id):
     current_file_path = os.path.join(os.path.join(os.path.abspath(os.curdir), client_id), file)
-    load_file(current_file_path)
     try:
         with open(current_file_path, "rb") as current_file:
             file_size = os.path.getsize(current_file_path)
@@ -225,22 +224,6 @@ def send_and_create_file(client_socket, file, client_id):
                 data = current_file.read(CONST.CHUNK_SIZE())
     except IOError:
         client_socket.sendall(b'\n')
-
-
-# make sure file isn't being writing on
-def load_file(file):
-    with open(file, "rb") as current_file:
-
-        # as long as the file size doesn't match it's size before, keep looping
-        while True:
-            try:
-                first_file_size = os.path.getsize(file)
-                time.sleep(1.2)
-                second_file_size = os.path.getsize(file)
-                if first_file_size == second_file_size:
-                    return
-            except IOError:
-                continue
 
 
 # this method send events to client.
